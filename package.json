@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/index.js",
     "test": "node test/understand.test.js && node test/reply.test.js && node test/conversations.test.js && node --disable-warning=ExperimentalWarning test/store.test.js",
+    "test:tz": "TZ=UTC npm test && TZ=America/New_York npm test && TZ=Asia/Tokyo npm test",
     "demo": "node scripts/demo.js",
     "import": "node scripts/import-whatsapp.js",
     "merge": "node scripts/merge-phrases.js",

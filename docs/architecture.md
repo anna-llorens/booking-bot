@@ -35,6 +35,10 @@ How booking-bot is organized so that it can hold many salons, their customers an
 
 **Why this split.** `understand.js` and `reply.js` are pure functions: same input, same output, no database, no clock, no network. That makes them fast to test with thousands of phrases and whole conversations, and it means the storage, the channel (WhatsApp, a web chat, the test UI) or the hosting can change without touching the bot's behavior. `bot.js` is the only place that reads and writes data.
 
+### Time zone
+
+Messages carry a real moment (the WhatsApp timestamp). `bot.js` turns it into the salon's wall-clock time (`settings.timezone`, `Europe/Madrid` by default) with `Intl.DateTimeFormat` (`src/timezone.js`) before anything else uses it. `understand.js` and `reply.js` only see that wall-clock time and never call `new Date()` themselves: `today` is a required option. So "mañana" written at 00:30 in Madrid is right on a server in UTC, and an appointment at 10:00 stays at 10:00 across a daylight-saving change (appointments are stored as a date and a wall-clock time). `npm run test:tz` runs the whole suite in other process time zones.
+
 ### What `reply.js` gets from `bot.js`
 
 | Option | Comes from | Used for |

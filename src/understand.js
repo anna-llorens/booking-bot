@@ -228,7 +228,7 @@ const CONDITIONAL_SI = /^si (no|alguien|puede|pudiera|pudieras|quieres|quereis|o
 
 const ANY_TIME = /\b(la que (tengais|tengas|haya) (libre|disponible)|cualquiera( de (las|los) (dos|tres))?|me da igual (cual|la que sea|la hora)|la que sea|(como|lo que|cuando) (os|te) (venga|vaya) (mejor|bien)|a la hora que (os|te) (venga|vaya) (bien|mejor)|la (hora )?que (os|te) (venga|vaya) (bien|mejor)|cuando (os|te) (venga|vaya) (bien|mejor)|me da igual la hora|cualquier hora|a cualquier hora)\b/;
 
-function detectIntent(t, raw = '') {
+function detectIntent(t, raw = '', today) {
   // "sí, …" / "Sí" (accent or comma) is a yes; "si no os importa…" (no accent) is a condition
   const conditional = CONDITIONAL_SI.test(t) && !/^\s*¡?s[ií]+\s*[,.!]/i.test(raw) && !/^\s*¡?sí/i.test(raw);
   if (NAME_QUESTION.test(t)) return 'name';
@@ -256,7 +256,7 @@ function detectIntent(t, raw = '') {
   if (CONFIRM_AT_END.test(t) && !detectTimeOfDay(t) && !/\d/.test(t)) return 'confirm';
   // "si puede ser por la mañana" is not a yes: it brings a new day or time of day
   const yes = CONFIRM.test(t) && !conditional;
-  if (yes && !detectDate(t, new Date()) && !detectTimeOfDay(t) && !/\d/.test(t) && !EXPLICIT_BOOKING.test(t)) return 'confirm';
+  if (yes && !detectDate(t, today) && !detectTimeOfDay(t) && !/\d/.test(t) && !EXPLICIT_BOOKING.test(t)) return 'confirm';
   if (ATTENDING.test(t) && !CHANGE_WORDS.test(t)) return 'confirm';
   for (const [name, regex] of INTENTS) if (regex.test(t)) return name;
   return null;
@@ -468,9 +468,11 @@ function newPart(t) {
 //   lastQuestion: 'proposal' | 'service' | 'day' | 'timeOfDay' | 'time' | null
 //   proposals: times the bot just offered, e.g. ['09:45', '13:00']
 //   hasAppointment: true if the customer already has an appointment booked
-function understand(message, { today = new Date(), services = SAMPLE_CATALOG, context = {} } = {}) {
+// `today` is required: the date always comes from outside (bot.js gives the salon's wall-clock time)
+function understand(message, { today, services = SAMPLE_CATALOG, context = {} } = {}) {
+  if (!(today instanceof Date) || Number.isNaN(today.getTime())) throw new TypeError('understand(): pass { today } as a valid Date');
   const t = normalize(message);
-  let intent = detectIntent(t, message);
+  let intent = detectIntent(t, message, today);
   const list = detectServices(t, services);
   // When rescheduling, day, time of day and time are searched first in the NEW part of the message
   let chunk = t, cleaned = t;

@@ -5,7 +5,11 @@ const { MIGRATIONS } = require('../src/store/sqlite-store');
 const { seedDemoData } = require('../src/demo-data');
 const { handleMessage, resetConversation } = require('../src/bot');
 
-const now = new Date(2026, 10, 10, 10, 0); // Tuesday 10 Nov 2026
+// Times are real instants given as the salon's wall-clock time in Madrid, so these tests give the same
+// result whatever time zone they run in (npm run test:tz).
+const { instantAt } = require('../src/timezone');
+const madrid = wall => instantAt(wall, 'Europe/Madrid');
+const now = madrid('2026-11-10T10:00'); // Tuesday 10 Nov 2026
 const SALON = 'demo-peluqueria';
 const BEAUTY = 'demo-estetica';
 
@@ -105,7 +109,7 @@ const cases = {
 
   'public holidays from the salon settings are closed, also for makeIsFree': async () => {
     const store = await freshStore();
-    const at = new Date(2026, 10, 30, 10, 0);
+    const at = madrid('2026-11-30T10:00');
     const r = await say(store, SALON, '611', 'quiero cita para corte el 8 de diciembre', at);
     assert.match(r.reply, /cerrados \(festivo\)/);
     assert.doesNotMatch(r.reply, /8 de diciembre:/);
@@ -132,7 +136,7 @@ const cases = {
     const c = await store.findOrCreateCustomer(SALON, require('../src/bot').normalizePhone('611'));
     await store.createAppointment({ businessId: SALON, customerId: c.id, service: 'corte', name: 'Corte',
       details: [{ id: 'corte', group: 'corte', name: 'Corte', duration: 30 }], date: '2026-11-11', time: '10:30', duration: 30 });
-    let at = new Date(2026, 10, 10, 10);
+    let at = madrid('2026-11-10T10:00');
     const s = async t => { at = new Date(at.getTime() + 60000); return (await say(store, SALON, '611', t, at)).reply; };
     await s('quiero manicura el miércoles 18');
     await s('el miercoles a las 17:30');
@@ -165,27 +169,45 @@ const cases = {
       const svc = salon === SALON ? { service: 'corte', name: 'Corte', id: 'corte' } : { service: 'cejas', name: 'Depilación de cejas', id: 'depilacion_cejas' };
       await store.createAppointment({ businessId: salon, customerId: c.id, service: svc.service, name: svc.name,
         details: [{ id: svc.id, group: svc.service, name: svc.name, duration: 30 }], date: '2026-11-12', time: '18:00', duration: 30 });
-      const at = new Date(2026, 10, 10, 10);
+      const at = madrid('2026-11-10T10:00');
       const ask = salon === SALON ? 'quiero cita para tinte el jueves a las 18' : 'quiero cita para manicura el jueves a las 18';
       const r = await say(store, salon, '611', ask, at);
       assert.match(r.reply, /A las 18:00 no me queda hueco/, `${salon}: her own 18:00 appointment blocks it`);
     }
     // moving the haircut to the same day can keep 18:00 (its own slot)
     await resetConversation(store, { businessId: SALON, phone: '611' });
-    const at = new Date(2026, 10, 10, 11);
+    const at = madrid('2026-11-10T11:00');
     const r = await say(store, SALON, '611', 'me puedes cambiar la cita al jueves a las 18:00?', at);
     assert.doesNotMatch(r.reply, /no me queda hueco/);
   },
 
   'a slot taken at the last moment offers other times for the same service': async () => {
     const store = await freshStore();
-    const at = new Date(2026, 10, 10, 10);
+    const at = madrid('2026-11-10T10:00');
     await say(store, SALON, '611', 'tinte el jueves a las 12', at);   // offered 12:00 to 611
     await say(store, SALON, '622', 'corte el jueves a las 12', at);
     await say(store, SALON, '622', 'sí', at);                         // 622 takes it
     const r = await say(store, SALON, '611', 'sí', at);
     assert.match(r.reply, /a las 12:00 ya no puedo darte cita 😔 Para tinte el jueves/, 'other times for the same service, right away');
     assert.equal((await store.listAppointments(SALON)).length, 1, 'no double booking');
+  },
+
+  'time zone: 23:30 UTC is already the next day in Madrid, so "mañana" is the day after': async () => {
+    const store = await freshStore();
+    const r = await say(store, SALON, '611', 'quiero cita para corte mañana', new Date('2026-11-10T23:30:00Z'));
+    assert.equal(r.state.pending.date, '2026-11-12', 'in Madrid it is 00:30 on the 11th');
+  },
+
+  'daylight saving: an appointment at 10:00 on the day the clocks change stays at 10:00': async () => {
+    const store = await freshStore();
+    const b = await store.getBusiness(SALON);
+    await store.saveBusiness({ ...b, settings: { ...b.settings, closedWeekdays: [], simulatedBusy: false } }); // 2027-03-28 is a Sunday
+    await say(store, SALON, '611', 'corte el 28 de marzo a las 10', madrid('2027-03-20T10:00'));
+    await say(store, SALON, '611', 'sí', madrid('2027-03-20T10:01'));
+    const [a] = await store.listAppointments(SALON);
+    assert.equal(`${a.date} ${a.time}`, '2027-03-28 10:00');
+    const r = await say(store, SALON, '611', 'tengo cita?', madrid('2027-03-28T08:00'));
+    assert.match(r.reply, /hoy a las 10:00/);
   },
 
   'waiting list, owner inbox and message history are saved': async () => {

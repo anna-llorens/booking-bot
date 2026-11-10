@@ -16,7 +16,8 @@ const path = require('path');
 const { createStore, DEFAULT_FILE } = require('../src/store');
 const { seedDemoData } = require('../src/demo-data');
 const { handleMessage, resetConversation, makeIsFree, normalizePhone } = require('../src/bot');
-const { closedReason } = require('../src/reply');
+const { closedReason, DEFAULT_BUSINESS } = require('../src/reply');
+const { salonNow } = require('../src/timezone');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PAGE = path.join(__dirname, 'public', 'index.html');
@@ -142,7 +143,7 @@ function requirePhone(phone) {
 // For testing: gives her an appointment on the next open day at the first free slot from 10:00
 async function seedAppointment({ businessId, phone, today }) {
   const business = await requireBusiness(businessId);
-  const now = parseNow(today);
+  const now = salonNow(parseNow(today), business.settings.timezone ?? DEFAULT_BUSINESS.timezone);
   const customer = await store.findOrCreateCustomer(businessId, requirePhone(phone));
   const service = (await store.listServices(businessId))[0];
   const s = business.settings;

@@ -27,6 +27,7 @@ const DEFAULT_BUSINESS = {
   maxProposals: 2,       // how many times the bot offers at once
   capacity: 1,           // appointments that can overlap (chairs / staff)
   address: null,         // answered when she asks where the salon is
+  timezone: 'Europe/Madrid', // bot.js reads messages in the salon's wall-clock time
   minNoticeMinutes: 120, // no appointment may start sooner than now + this
   maxDaysAhead: 60,      // the diary is open this many days ahead
   // Answers the owner writes when setting up the salon. Empty ones are handed to the owner.
@@ -256,7 +257,7 @@ function respond(message, state = newConversation(), options = {}) {
 //   usual     [detail]        the customer's last service, for "lo de siempre"
 //   now       Date            the current moment, for minNoticeMinutes (defaults to `today`)
 function computeReply(message, state = newConversation(), {
-  today = new Date(),
+  today,
   services = SAMPLE_CATALOG,
   business: businessSettings = {},
   isFree: isFreeOption = (date, start) => !isSimulatedBusy(date, start),
@@ -264,6 +265,7 @@ function computeReply(message, state = newConversation(), {
   now = today,
 } = {}) {
   const business = { ...DEFAULT_BUSINESS, ...businessSettings };
+  if (!(today instanceof Date) || Number.isNaN(today.getTime())) throw new TypeError('respond(): pass { today } as a valid Date (the salon\'s wall-clock time)');
   state = JSON.parse(JSON.stringify(state)); // never mutate the caller's state
   // An offer left unanswered for more than 3 hours is stale: start fresh (confirmed appointments are kept)
   if (state.lastAt && now - new Date(state.lastAt) > STALE_OFFER_MINUTES * 60000) {

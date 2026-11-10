@@ -20,7 +20,8 @@ Requires **Node 22.13 or later**.
 
 ```bash
 npm start      # test UI at http://localhost:3000 (creates private-data/booking-bot.db and two demo salons)
-npm test       # phrase bank + reply tests + whole conversations + database
+npm test       # phrase bank (+ holdout) + reply tests + whole conversations + database
+npm run test:tz  # the same suite with the process in UTC, New York and Tokyo: must give the same result
 npm run demo   # what the engine understands for a few phrases
 ```
 
@@ -144,6 +145,7 @@ Each salon's settings live in `businesses.settings` (JSON). Anything left out ta
 | `minNoticeMinutes` | `120` | No appointment starts sooner than now + this |
 | `maxDaysAhead` | `60` | The diary is open this many days ahead (bot.js also loads the calendar that far) |
 | `address` | `null` | Answered to "¿dónde estáis?" |
+| `timezone` | `"Europe/Madrid"` | The salon's time zone: messages are read in its wall-clock time, whatever zone the server runs in |
 | `info` | `{}` | Answers the owner writes: `walkIn`, `payment`, `parking`, `children`, `pets`, `cancellationPolicy`, `latePolicy`. Empty ones go to the owner |
 | `askForNotes` | `true` | Before booking, ask "¿quieres que apunte algo especial?" and save the answer as the appointment's note |
 | `name` | — | Not a setting: `bot.js` passes the salon's name from the `businesses` table ("¿cómo se llama la peluquería?") |
@@ -164,6 +166,7 @@ A complete example:
   "minNoticeMinutes": 120,
   "maxDaysAhead": 60,
   "address": "Carrer Major 12, Barcelona",
+  "timezone": "Europe/Madrid",
   "info": {
     "walkIn": "Trabajamos con cita previa, pero si tenemos un hueco libre te atendemos sin problema 😊",
     "payment": "Puedes pagar en efectivo, con tarjeta o con Bizum.",

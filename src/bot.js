@@ -10,6 +10,7 @@
 //
 // understand.js and reply.js never touch the store; this file is the only place that does.
 const { respond, newConversation, isSimulatedBusy, closedReason, DEFAULT_BUSINESS } = require('./reply');
+const { salonNow } = require('./timezone');
 
 // A conversation idle for longer than this starts fresh (her appointments are kept, they live in the store)
 const CONVERSATION_TIMEOUT_HOURS = 8;
@@ -43,11 +44,15 @@ function makeIsFree(appointments, settings, own = []) {
   };
 }
 
-async function handleMessage(store, { businessId, phone, text, now = new Date() }) {
+// `now` is the real moment the message arrived (WhatsApp timestamp). It is turned into the salon's
+// wall-clock time (settings.timezone, Europe/Madrid by default) before anything else uses it.
+async function handleMessage(store, { businessId, phone, text, now: instant }) {
+  if (!(instant instanceof Date) || Number.isNaN(instant.getTime())) throw new TypeError('handleMessage(): pass { now } as a valid Date');
   const business = await store.getBusiness(businessId);
   if (!business) throw new Error(`Unknown business: ${businessId}`);
   const services = await store.listServices(businessId);
   const customer = await store.findOrCreateCustomer(businessId, normalizePhone(phone));
+  const now = salonNow(instant, business.settings.timezone ?? DEFAULT_BUSINESS.timezone);
   const today = toISODate(now);
 
   // Conversation: continue it, or start fresh if it has been idle too long
