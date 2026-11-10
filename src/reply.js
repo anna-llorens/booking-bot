@@ -1109,11 +1109,15 @@ function computeReply(message, state = newConversation(), {
         // all of them, or the ones she asks about ("¿y la de la manicura?", "¿tengo algo el viernes?")
         const asked = (u.service || u.date) ? matchAppointments(true) : appts;
         if (!asked.length) return out(`No veo ninguna cita${u.service ? ` de ${serviceLabel(u)}` : ''}${u.date ? ` ${formatDate(toISODate(u.date), today)}` : ''}. Tienes ${appts.length > 1 ? `estas: ${listAppointments(appts)}` : apptText(appts[0])}.`);
+        // "citas" / "mis citas" on their own: after listing them, offer another one
+        const bare = /^(las |mis |ver |ver las |ver mis )?(citas|reservas)( porfa| por favor| please)?$/.test(t);
+        const more = bare && !BOOKING_QUESTIONS.includes(state.lastQuestion) ? ' ¿Quieres pedir otra?' : '';
+        if (more) { state.lastQuestion = 'offerBooking'; state.proposals = []; }
         if (asked.length === 1) {
-          focusOn(asked[0]);
-          return out(`Tienes cita ${formatDate(asked[0].date, today)} a las ${asked[0].time} para ${asked[0].name.toLowerCase()}.`);
+          if (!more) focusOn(asked[0]);
+          return out(`Tienes cita ${formatDate(asked[0].date, today)} a las ${asked[0].time} para ${asked[0].name.toLowerCase()}.${more}`);
         }
-        return out(`Tienes ${asked.length} citas: ${listAppointments(asked)}.`);
+        return out(`Tienes ${asked.length} citas: ${listAppointments(asked)}.${more}`);
       }
       // in the middle of a booking: say so and carry on with it
       if (BOOKING_QUESTIONS.includes(state.lastQuestion)) {

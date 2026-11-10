@@ -755,6 +755,9 @@
     {"text":"mis citas","expected":{"intent":"check"},"source":"test-ui"},
     {"text":"¿qué citas tengo?","expected":{"intent":"check"},"source":"generated"},
     {"text":"quiero manicura el miércoles 18","expected":{"intent":"book","service":"manicura","date":"2026-11-18"},"context":{"hasAppointment":true},"source":"test-ui","note":"a new service while she has another appointment is a new booking, not a change"},
-    {"text":"el jueves a las 12","expected":{"intent":"reschedule"},"context":{"hasAppointment":true},"source":"generated","note":"only a day/time with an appointment: moving it"}
+    {"text":"el jueves a las 12","expected":{"intent":"reschedule"},"context":{"hasAppointment":true},"source":"generated","note":"only a day/time with an appointment: moving it"},
+    {"text":"citas","expected":{"intent":"check"},"source":"test-ui","note":"lists her appointments, then offers another"},
+    {"text":"ver mis citas","expected":{"intent":"check"},"source":"generated"},
+    {"text":"cita","expected":{"intent":"book"},"source":"generated","note":"singular: starts a booking"}
   ]
 }
