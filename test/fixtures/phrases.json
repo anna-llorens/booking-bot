@@ -105,7 +105,7 @@
     {"text":"Cuánto es un corte de niño?","expected":{"intent":"price","service":"corte"},"source":"generated"},
     {"text":"qué cobras por el color?","expected":{"intent":"price","service":"tinte"},"source":"generated"},
     {"text":"es muy caro el balayage?","expected":{"intent":"price","service":"mechas"},"source":"generated"},
-    {"text":"lista de precios porfa","expected":{"intent":"price"},"source":"generated"},
+    {"text":"lista de precios porfa","expected":{"intent":"services"},"source":"generated","note":"the bot answers with the salon's price list"},
     {"text":"cuanto cuesta","expected":{"intent":"price"},"source":"generated"},
     {"text":"a qué hora abrís mañana?","expected":{"intent":"hours","date":"2026-11-11"},"source":"generated"},
     {"text":"Estáis abiertos el sábado?","expected":{"intent":"hours","date":"2026-11-14"},"source":"generated"},
@@ -687,6 +687,14 @@
     {"text":"si llego 10 minutos tarde, ¿me la mantenéis?","expected":{"intent":"info","topic":"latePolicy"},"source":"business-info"},
     {"text":"¿me das cita el sábado para tinte? ¿aceptáis bizum?","expected":{"intent":"book","service":"tinte","date":"2026-11-14"},"source":"business-info"},
     {"text":"llegaré 10 minutos tarde","expected":{"intent":"late"},"source":"business-info","note":"control: avisar de que llega tarde sigue siendo late"},
-    {"text":"quiero cancelar la cita del jueves","expected":{"intent":"cancel","date":"2026-11-12"},"source":"business-info","note":"control: cancelar de verdad sigue siendo cancel"}
+    {"text":"quiero cancelar la cita del jueves","expected":{"intent":"cancel","date":"2026-11-12"},"source":"business-info","note":"control: cancelar de verdad sigue siendo cancel"},
+    {"text":"podrias listarme todos los servicios","expected":{"intent":"services"},"source":"test-ui"},
+    {"text":"no, lo que quiero es que listes todos los servicios","expected":{"intent":"services"},"source":"test-ui"},
+    {"text":"¿qué servicios tenéis?","expected":{"intent":"services"},"source":"test-ui"},
+    {"text":"tienes precios","expected":{"intent":"services"},"source":"test-ui"},
+    {"text":"¿qué hacéis de uñas?","expected":{"intent":"services","category":"manicura_pedicura"},"source":"test-ui"},
+    {"text":"¿qué tratamientos faciales tenéis?","expected":{"intent":"services","category":"estetica_facial"},"source":"test-ui"},
+    {"text":"¿qué servicios de color hay?","expected":{"intent":"services","category":"coloracion"},"source":"test-ui"},
+    {"text":"que haceis el sabado?","expected":{"intent":"book","date":"2026-11-14"},"source":"test-ui"}
   ]
 }

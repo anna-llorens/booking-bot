@@ -623,6 +623,34 @@ function computeReply(message, state = newConversation(), {
       return out(`${text} ¿Puedo ayudarte en algo más?`);
     }
 
+    case 'services': {
+      // the salon's own catalog, grouped by category; one category in detail if she asks for it
+      const CATEGORY_LABELS = {
+        peluqueria: '💇 Peluquería', coloracion: '🎨 Color', tratamientos_capilares: '✨ Tratamientos capilares',
+        barberia: '🧔 Barbería', estetica_facial: '🧖 Facial', estetica_corporal: '💆 Corporal',
+        depilacion: '🌿 Depilación', manicura_pedicura: '💅 Manos y pies', pestanas_cejas: '👁️ Cejas y pestañas',
+      };
+      const priceText = list => { const p = list.map(s => s.price).filter(x => x != null); return p.length ? ` (desde ${euros(Math.min(...p))})` : ''; };
+      const keepBooking = BOOKING_QUESTIONS.includes(state.lastQuestion);
+      if (!keepBooking) { state.lastQuestion = 'service'; state.proposals = []; }
+      const ending = keepBooking ? '' : ' ¿Qué te apetece? Dime el servicio y te busco hueco 😊';
+      if (u.category) {
+        const list = services.filter(s => s.category === u.category);
+        if (!list.length) return out(`Ahora mismo no hacemos ${CATEGORY_LABELS[u.category]?.replace(/^\S+ /, '').toLowerCase() ?? 'eso'} 😔 ¿Te puedo ayudar con otra cosa?`);
+        const lines = list.slice(0, 12).map(s => `• ${displayName(s)}${s.price != null ? `: ${euros(s.price)}` : ''}`);
+        return out(`${CATEGORY_LABELS[u.category] ?? 'Servicios'}:\n${lines.join('\n')}${list.length > 12 ? '\n• …y más' : ''}\n${ending.trim()}`.trim());
+      }
+      const order = Object.keys(CATEGORY_LABELS);
+      const cats = [...new Set(services.map(s => s.category))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      const lines = cats.map(c => {
+        const list = services.filter(s => s.category === c);
+        const general = list.filter(s => s.id === s.group);
+        const names = (general.length ? general : list).slice(0, 4).map(s => displayName(s).toLowerCase());
+        return `• ${CATEGORY_LABELS[c] ?? c}: ${names.join(', ')}${list.length > names.length ? '…' : ''}${priceText(list)}`;
+      });
+      return out(`Esto es lo que hacemos:\n${lines.join('\n')}\nSi quieres el detalle de algo, pregúntame (por ejemplo, "¿qué hacéis de uñas?").${ending}`);
+    }
+
     case 'undecided':
       // "luego te digo", "lo hablo con mi marido y te confirmo": nothing is booked, the offer is dropped
       state.proposals = []; state.lastQuestion = null;

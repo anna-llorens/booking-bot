@@ -92,6 +92,7 @@ Every table is keyed by salon: a salon never sees another salon's customers. See
 | `hours` | "¿abrís los sábados?", "¿y por la tarde también?", "¿abrís el 8 de diciembre?", "¿cerráis en agosto?" | Answers from the salon's settings, including public holidays and holidays |
 | `info` (+ `topic`) | "¿atendéis sin cita?" (`walkIn`), "¿aceptáis bizum?" (`payment`), "¿dónde aparco?" (`parking`), "¿puedo llevar al niño?" (`children`), "¿con cuánta antelación tengo que cancelar?" (`cancellationPolicy`), "si llego tarde, ¿me la mantenéis?" (`latePolicy`) | Answers with the salon's `info` text; empty → the owner answers. A policy question never triggers the action (it doesn't cancel or flag her as late). With a booking in the same message, the booking goes on and the answer is added |
 | `event` | "es que tengo una boda el sábado" | "¡Qué bien! 🎉" and only proposes days before it |
+| `services` (+ `category`) | "lístame todos los servicios", "¿qué servicios tenéis?", "¿tienes precios?", "¿qué hacéis de uñas?" | Lists the salon's own catalog by category, with "desde X €" when there are prices; one category in detail if she names it. In the middle of a booking it keeps the booking |
 | `greeting` | "hola", "buenas", "¿qué tal?" | Greets and says what it can do |
 | `thanks` | "gracias", "me encantó, sois las mejores" | Thanks back |
 | `preamble` | "una pregunta", "a ver una cosita jajaja" | "¡Claro, dime!" |

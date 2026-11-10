@@ -152,6 +152,21 @@ const infoTopics = t => INFO_TOPICS.filter(([, re]) => re.test(t)).map(([topic])
 // A real booking request in the same message wins over an info question ("¿me das cita el sábado? ¿aceptáis bizum?")
 const BOOKING_REQUEST = /\b(me (das|dais|puedes dar|podeis dar|coges|cogeis|apuntas|apuntais|reservas|reservais) (cita|hora|hueco)?|quiero (cita|hora|reservar)|queria (cita|hora|pedir|reservar|coger)|cita para|hueco para|reservame|reservadme|apuntame|(?<!(falta|que|necesario|obligatorio) )pedir (cita|hora))\b/;
 
+// "¿qué servicios tenéis?", "lístame todos los servicios", "¿tienes precios?": the salon's catalog
+const SERVICES_LIST = /\b(lista(r|me|nos|d|do)?( de)? (los |todos los |vuestros |tus )?(servicios|precios|tratamientos)|(que|cuales|cuantos) (servicios|tratamientos)( \w+){0,2} (teneis|tienes|haceis|haces|ofreceis|hay)|(todos )?(los|vuestros|tus) servicios|carta de servicios|catalogo|lista de precios|(teneis|tienes|hay) (una )?(lista|carta)|(teneis|tienes) precios|que (precios|tarifas) (teneis|tienes|hay))\b|^(y )?que (haceis|ofreceis)( (de|en) \w+)?$|\bque (haceis|ofreceis) (de|en) \w+/;
+// Category asked about: "¿qué tratamientos faciales tenéis?", "precios de uñas"
+const SERVICE_CATEGORIES = [
+  ['peluqueria', /\b(pelo|peluqueria|cortes?|peinados?)\b/],
+  ['coloracion', /\b(color|coloracion|tintes?|mechas)\b/],
+  ['tratamientos_capilares', /\b(tratamientos? (capilares?|para el pelo)|keratina|queratina)\b/],
+  ['barberia', /\b(barba|barberia|hombres?|caballeros?)\b/],
+  ['estetica_facial', /\b(facial(es)?|cara|cutis)\b/],
+  ['estetica_corporal', /\b(corporal(es)?|cuerpo|masajes?)\b/],
+  ['depilacion', /\b(depilacion|depilar|cera|laser)\b/],
+  ['manicura_pedicura', /\b(unas|manicuras?|pedicuras?|manos|pies)\b/],
+  ['pestanas_cejas', /\b(pestanas|cejas)\b/],
+];
+
 // Wants to hear if a slot frees up: "avísame si queda algo antes", "si alguien cancela…", "lista de espera".
 // "Si alguien cancela" is about someone else, never a cancellation of hers.
 const WAITLIST = /\blista de espera\b|\bsi (alguien|alguna|algun cliente|alguna clienta|otra persona|otra clienta|os|te|se) (cancela|cancelan|anula|anulan|libera|liberan|falla|fallan|deja|quita)\b|\b(avis\w*|escrib\w*|llam\w*|di(me|dnos)|me (dices|decis)) (me |nos )?(si|cuando) (se )?(queda|quedara|libera|liberara|sale|saliera|hay|hubiera|cancela|cancelan|anula)\b|\bsi (se libera|queda libre|quedara libre|sale) (algun|algo|alguna|un|una|hueco|sitio)\b|\b(avis\w*) (me |nos )?(si|cuando) .*\b(hueco|sitio|libre|antes|cancel\w*)\b/;
@@ -190,6 +205,7 @@ const ANY_TIME = /\b(la que (tengais|tengas|haya) (libre|disponible)|cualquiera(
 function detectIntent(t, raw = '') {
   // "sí, …" / "Sí" (accent or comma) is a yes; "si no os importa…" (no accent) is a condition
   const conditional = CONDITIONAL_SI.test(t) && !/^\s*¡?s[ií]+\s*[,.!]/i.test(raw) && !/^\s*¡?sí/i.test(raw);
+  if (SERVICES_LIST.test(t)) return 'services';
   // salon info questions first: "¿puedo llevar al niño? no tengo con quién dejarlo" has "quién" (off-topic list)
   if (infoTopics(t).length && !BOOKING_REQUEST.test(t) && !WAITLIST.test(t)) return 'info';
   if (NOT_BOOKING.test(t) && !EXPLICIT_BOOKING.test(t)) return null;
@@ -463,6 +479,10 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
   }
   result.normalizedText = t;
   if (result.intent === 'info') result.topic = result.infoTopics[0];
+  if (result.intent === 'services') {
+    result.category = SERVICE_CATEGORIES.find(([, re]) => re.test(t))?.[0] ?? null;
+    result.withPrices = /\b(precios?|tarifas?|cuesta|cuestan|cuanto)\b/.test(t);
+  }
   // "tengo una boda el sábado": the date is the event's, not the appointment's
   if (result.date && EVENT.test(t) && !result.service && !EXPLICIT_BOOKING.test(t) && !/\b(cita|hueco|para el|me (podeis|puedes) coger)\b/.test(t)) {
     result.eventDate = result.date; result.date = null;
@@ -496,7 +516,7 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
 
 // Short answers ("tarde", "9:45", "o el lunes") can only be understood knowing what the bot asked
 function applyContext(r, { lastQuestion = null, proposals = [], hasAppointment = false } = {}) {
-  const fixed = ['confirm', 'cancel', 'check', 'price', 'hours', 'late', 'thanks', 'preamble', 'undecided', 'waitlist', 'wait', 'keep', 'duration', 'event', 'info'];
+  const fixed = ['confirm', 'cancel', 'check', 'price', 'hours', 'late', 'thanks', 'preamble', 'undecided', 'waitlist', 'wait', 'keep', 'duration', 'event', 'info', 'services'];
   if (fixed.includes(r.intent)) return;
   const anything = r.time || r.date || r.timeOfDay;
   if (lastQuestion === 'proposal') {
