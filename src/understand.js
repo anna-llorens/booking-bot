@@ -187,6 +187,10 @@ const SERVICE_CATEGORIES = [
   ['pestanas_cejas', /\b(pestanas|cejas)\b/],
 ];
 
+// A polite no to the offer: "gracias, otro día", "en otro momento", "más adelante", "déjalo", "no, gracias".
+// ("otro día" on its own, or "¿me lo pasas a otro día?", is still asking for another day.)
+const DECLINE = /^(vale |ok |bueno |pues |nada )?(gracias|muchas gracias|mil gracias)? ?(pero )?(mejor )?(ya )?(en )?(otro (dia|rato|momento)|mas adelante|en otra ocasion)( gracias| entonces| ya| si eso)?$|^(vale |ok |bueno |pues )?(en otro momento|mas adelante|dejalo|dejalo estar|lo dejamos|lo dejo|lo dejo (para otro dia|para mas adelante)|mejor no|ahora no|de momento no|por ahora no|no gracias|no,? gracias|no hace falta|ya si eso)( gracias| entonces| ya| ya esta| asi esta bien)?$/;
+
 // Wants to hear if a slot frees up: "avísame si queda algo antes", "si alguien cancela…", "lista de espera".
 // "Si alguien cancela" is about someone else, never a cancellation of hers.
 const WAITLIST = /\blista de espera\b|\bsi (alguien|alguna|algun cliente|alguna clienta|otra persona|otra clienta|os|te|se) (cancela|cancelan|anula|anulan|libera|liberan|falla|fallan|deja|quita)\b|\b(avis\w*|escrib\w*|llam\w*|di(me|dnos)|me (dices|decis)) (me |nos )?(si|cuando) (se )?(queda|quedara|libera|liberara|sale|saliera|hay|hubiera|cancela|cancelan|anula)\b|\bsi (se libera|queda libre|quedara libre|sale) (algun|algo|alguna|un|una|hueco|sitio)\b|\b(avis\w*) (me |nos )?(si|cuando) .*\b(hueco|sitio|libre|antes|cancel\w*)\b/;
@@ -238,6 +242,7 @@ function detectIntent(t, raw = '') {
   if (FAREWELL.test(t)) return 'confirm';
   if (UNSURE.test(t)) return 'reschedule'; // reply.js asks whether to move or cancel it
   if (UNDECIDED.test(t)) return 'undecided';
+  if (DECLINE.test(t) && !/^otro (dia|rato|momento)$/.test(t)) return 'undecided';
   if (NONE_OF_THEM.test(t)) return 'reschedule'; // reply.js offers other times
   // "vale, pues la primera": the choice wins over the "vale"
   if (detectOption(t)) return 'choose';
@@ -483,6 +488,7 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
     times: detectTimes(t, timeOfDay),
     noneOfThem: NONE_OF_THEM.test(t),
     unsure: UNSURE.test(t),
+    declined: DECLINE.test(t) && !/^otro (dia|rato|momento)$/.test(t),
     // info questions in the message: the first one is the topic of an 'info' intent; with a booking, all are answered too
     infoTopics: infoTopics(t),
   };

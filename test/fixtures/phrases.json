@@ -732,6 +732,16 @@
     {"text":"servicios","expected":{"intent":"services"},"source":"test-ui"},
     {"text":"servivios","expected":{"intent":"services"},"source":"test-ui"},
     {"text":"los servicios porfa","expected":{"intent":"services"},"source":"test-ui"},
-    {"text":"precios","expected":{"intent":"price"},"source":"test-ui"}
+    {"text":"precios","expected":{"intent":"price"},"source":"test-ui"},
+    {"text":"gracias, otro dia","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no to the offer"},
+    {"text":"gracias pero mejor otro día","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no to the offer"},
+    {"text":"en otro momento","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no to the offer"},
+    {"text":"más adelante, gracias","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no to the offer"},
+    {"text":"déjalo","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no to the offer"},
+    {"text":"no, gracias","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no to the offer"},
+    {"text":"no gracias, ya está","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no to the offer"},
+    {"text":"otro dia","expected":{"intent":"reschedule"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"asks for another day"},
+    {"text":"¿me lo pasas a otro día?","expected":{"intent":"reschedule"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"asks for another day"},
+    {"text":"mejor otro día por la tarde","expected":{"intent":"reschedule"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"asks for another day"}
   ]
 }
