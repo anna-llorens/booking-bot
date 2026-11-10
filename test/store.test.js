@@ -157,6 +157,37 @@ const cases = {
     assert.match((await say(store, SALON, '611', 'en que consiste?')).reply, /maquillaje semipermanente de cejas/);
   },
 
+  'her own appointments block those times for a new booking; moving one can reuse its own time': async () => {
+    const store = await freshStore();
+    const { normalizePhone } = require('../src/bot');
+    for (const salon of [SALON, BEAUTY]) { // BEAUTY has capacity 2: she still can't be in two places
+      const c = await store.findOrCreateCustomer(salon, normalizePhone('611'));
+      const svc = salon === SALON ? { service: 'corte', name: 'Corte', id: 'corte' } : { service: 'cejas', name: 'Depilación de cejas', id: 'depilacion_cejas' };
+      await store.createAppointment({ businessId: salon, customerId: c.id, service: svc.service, name: svc.name,
+        details: [{ id: svc.id, group: svc.service, name: svc.name, duration: 30 }], date: '2026-11-12', time: '18:00', duration: 30 });
+      const at = new Date(2026, 10, 10, 10);
+      const ask = salon === SALON ? 'quiero cita para tinte el jueves a las 18' : 'quiero cita para manicura el jueves a las 18';
+      const r = await say(store, salon, '611', ask, at);
+      assert.match(r.reply, /A las 18:00 no me queda hueco/, `${salon}: her own 18:00 appointment blocks it`);
+    }
+    // moving the haircut to the same day can keep 18:00 (its own slot)
+    await resetConversation(store, { businessId: SALON, phone: '611' });
+    const at = new Date(2026, 10, 10, 11);
+    const r = await say(store, SALON, '611', 'me puedes cambiar la cita al jueves a las 18:00?', at);
+    assert.doesNotMatch(r.reply, /no me queda hueco/);
+  },
+
+  'a slot taken at the last moment offers other times for the same service': async () => {
+    const store = await freshStore();
+    const at = new Date(2026, 10, 10, 10);
+    await say(store, SALON, '611', 'tinte el jueves a las 12', at);   // offered 12:00 to 611
+    await say(store, SALON, '622', 'corte el jueves a las 12', at);
+    await say(store, SALON, '622', 'sí', at);                         // 622 takes it
+    const r = await say(store, SALON, '611', 'sí', at);
+    assert.match(r.reply, /a las 12:00 ya no puedo darte cita 😔 Para tinte el jueves/, 'other times for the same service, right away');
+    assert.equal((await store.listAppointments(SALON)).length, 1, 'no double booking');
+  },
+
   'waiting list, owner inbox and message history are saved': async () => {
     const store = await freshStore();
     await say(store, SALON, '611', 'si alguien cancela el jueves avísame');

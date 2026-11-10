@@ -59,7 +59,7 @@ for (const conv of conversations) {
   conv.messages.forEach((m, i) => {
     // conversations written before the notes question keep booking in one step unless they turn it on
     const services = conv.services === 'beauty' ? BEAUTY : undefined;
-    const r = respond(m.text, state, { today: new Date(m.today), business: { askForNotes: false, ...conv.business }, services });
+    const r = respond(m.text, state, { today: new Date(m.today), business: { askForNotes: false, ...conv.business }, services, usual: conv.usual ?? null });
     state = r.state;
     lines.push(`    > ${m.text}\n      [${r.understanding.intent}${r.handover ? ' →owner' : ''}] ${r.reply}`);
     if (m.expect) checkTurn(m.expect, r).forEach(e => errors.push(`message ${i + 1} ("${m.text}"): ${e}`));

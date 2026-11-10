@@ -251,14 +251,15 @@ function respond(message, state = newConversation(), options = {}) {
 //   today     Date            "now", for "mañana", "el viernes" and not proposing past times
 //   services  [service]       the business catalog (see catalog.json); a service may have a price
 //   business  {settings}      opening hours, closed days, capacity, address… (see DEFAULT_BUSINESS)
-//   isFree    (date, startMinutes, duration) => bool   real availability; simulated if omitted
+//   isFree    (date, startMinutes, duration, { ignoreId }) => bool   real availability; simulated if omitted.
+//             ignoreId: the appointment being moved (its own slot counts as free)
 //   usual     [detail]        the customer's last service, for "lo de siempre"
 //   now       Date            the current moment, for minNoticeMinutes (defaults to `today`)
 function computeReply(message, state = newConversation(), {
   today = new Date(),
   services = SAMPLE_CATALOG,
   business: businessSettings = {},
-  isFree = (date, start) => !isSimulatedBusy(date, start),
+  isFree: isFreeOption = (date, start) => !isSimulatedBusy(date, start),
   usual = null,
   now = today,
 } = {}) {
@@ -371,6 +372,10 @@ function computeReply(message, state = newConversation(), {
   if (previousTopic === 'hours' && followUp && !u.service && [null, 'book', 'hours'].includes(u.intent)) topic = 'hours';
   if (previousTopic === 'price' && followUp && [null, 'book', 'price'].includes(u.intent)) topic = 'price';
 
+  // Availability: her own appointment's slot only counts as free while she is moving that appointment
+  const isFree = (date, start, duration) =>
+    isFreeOption(date, start, duration, { ignoreId: state.mode === 'reschedule' && appt?.id ? appt.id : null });
+
   // She may have several appointments; `appt` is the one being talked about
   let appt = state.appointment;
   const appts = state.appointments?.length ? state.appointments : (appt ? [appt] : []);
@@ -415,6 +420,11 @@ function computeReply(message, state = newConversation(), {
     if (u.service === 'LAST' && usual?.length) {
       // "lo de siempre": her last service, from her history
       p.service = usual[0].group; p.details = usual; p.duration = usual.reduce((n, d) => n + (d.duration ?? 0), 0) || null;
+    } else if (u.service === 'LAST' && !p.service) {
+      // "lo de siempre" with no history: ask, never book something called "lo de siempre"
+      p.askedUsual = true;
+    } else if (u.service === 'LAST') {
+      // she is already booking a service: keep it
     } else if (u.service && p.details?.length && /\b(tambien|ademas|anad\w*|anade\w*|sumale|suma|junto con|y otra)\b/.test(t)) {
       // "y también las cejas", "añade las cejas": add to what she already asked for, don't replace it
       const extra = u.details.filter(d => !p.details.some(x => x.id === d.id));
@@ -508,6 +518,7 @@ function computeReply(message, state = newConversation(), {
     state.proposals = [];
     if (!p.service) {
       state.lastQuestion = 'service';
+      if (p.askedUsual) return out(`No encuentro tu última cita 🤔 ¿Qué te sueles hacer? (${serviceExamples(services).join(', ')}…)`);
       return out(`¿Qué servicio te quieres hacer? (${serviceExamples(services).join(', ')}…)`);
     }
     const duration = p.duration || 30;

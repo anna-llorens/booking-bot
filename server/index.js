@@ -151,7 +151,8 @@ async function seedAppointment({ businessId, phone, today }) {
     d.setDate(d.getDate() + 1);
     const date = toISODate(d);
     if (closedReason(date, s)) continue;
-    const isFree = makeIsFree(await store.listAppointments(businessId, { from: date, to: date }), { ...s, simulatedBusy: false });
+    const isFree = makeIsFree(await store.listAppointments(businessId, { from: date, to: date }), { ...s, simulatedBusy: false },
+      await store.listCustomerAppointments(businessId, customer.id, date));
     for (let m = 10 * 60; m + (service.duration ?? 30) <= 19 * 60; m += 30) {
       if (!isFree(date, m, service.duration ?? 30)) continue;
       const time = `${String(m / 60 | 0).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;

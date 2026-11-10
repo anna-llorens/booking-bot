@@ -28,17 +28,18 @@ function normalizePhone(phone) {
 // The conversation state only needs the fields reply.js uses
 const toStateAppointment = a => a && { id: a.id, service: a.service, name: a.name, details: a.details, duration: a.duration, date: a.date, time: a.time, notes: a.notes ?? null };
 
-// Free if fewer than `capacity` booked appointments overlap [start, start + duration).
-// `ignoreId`: her own appointment, so moving it can reuse its slot.
-function makeIsFree(appointments, settings, ignoreId) {
+// Free if fewer than `capacity` booked appointments overlap [start, start + duration), and the customer has
+// none of her own at that time (she can't be in two places, whatever the capacity).
+// isFree(date, start, duration, { ignoreId }): ignoreId = the appointment being moved, so it can reuse its slot.
+function makeIsFree(appointments, settings, own = []) {
   const capacity = settings.capacity ?? 1;
-  return (date, start, duration) => {
+  return (date, start, duration, { ignoreId = null } = {}) => {
     if (closedReason(date, settings)) return false; // weekly day off, public holiday or holidays
     if (settings.simulatedBusy && isSimulatedBusy(date, start)) return false;
     const end = start + duration;
-    const overlapping = appointments.filter(a => a.id !== ignoreId && a.date === date &&
-      toMinutes(a.time) < end && start < toMinutes(a.time) + a.duration);
-    return overlapping.length < capacity;
+    const overlaps = a => a.id !== ignoreId && a.date === date && toMinutes(a.time) < end && start < toMinutes(a.time) + a.duration;
+    if (own.some(overlaps)) return false;
+    return appointments.filter(overlaps).length < capacity;
   };
 }
 
@@ -64,8 +65,8 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
   // load the calendar as far as the diary is open
   const until = new Date(now); until.setDate(until.getDate() + (business.settings.maxDaysAhead ?? DEFAULT_BUSINESS.maxDaysAhead));
   const calendar = await store.listAppointments(businessId, { from: today, to: toISODate(until) });
-  // her focused appointment's own slot counts as free, so moving it can reuse it
-  const isFree = makeIsFree(calendar, business.settings, upcoming?.id);
+  // reply.js passes { ignoreId } only when moving an appointment, so it can reuse its own slot
+  const isFree = makeIsFree(calendar, business.settings, mine);
 
   const result = respond(text, state, {
     today: now,
@@ -86,7 +87,7 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
   if (moved) {
     // Someone else may have taken the slot since the bot proposed it: check again against a fresh calendar
     const fresh = await store.listAppointments(businessId, { from: after.date, to: after.date });
-    if (!makeIsFree(fresh, { ...business.settings, simulatedBusy: false }, after.id)(after.date, toMinutes(after.time), after.duration)) {
+    if (!makeIsFree(fresh, { ...business.settings, simulatedBusy: false }, mine)(after.date, toMinutes(after.time), after.duration, { ignoreId: after.id })) {
       conflict = true;
     } else if (stored) {
       appointment = await store.updateAppointment(businessId, stored.id, { date: after.date, time: after.time, service: after.service, name: after.name, details: after.details, duration: after.duration, notes: after.notes ?? null });
@@ -103,8 +104,11 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
   const nowMine = await store.listCustomerAppointments(businessId, customer.id, today);
   let newState = { ...result.state, cancelledId: null, appointment: toStateAppointment(appointment), appointments: nowMine.map(toStateAppointment), focusId: appointment?.id ?? null };
   if (conflict) {
-    reply = 'Vaya, esa hora se acaba de ocupar 😔 ¿Te busco otra? Dime qué día te va bien.';
-    newState = { ...newState, lastQuestion: 'day', proposals: [], pending: { ...result.state.pending, ...after, date: undefined, time: undefined } };
+    // keep what she was booking (service, day): "sí" looks for other times for that same service
+    reply = 'Vaya, esa hora ya no está libre 😔 ¿Te busco otra?';
+    const { id, name, time, notes, ...rest } = after;
+    newState = { ...newState, lastQuestion: 'offerBooking', proposals: [], mode: after.id ? 'reschedule' : 'book',
+      pending: { ...result.state.pending, ...rest, notesAsked: true, ...(notes ? { notes: [notes] } : {}) } };
   }
   await store.saveConversation(businessId, customer.id, newState);
 
