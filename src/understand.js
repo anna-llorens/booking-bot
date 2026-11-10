@@ -605,4 +605,9 @@ function understandBatch(messages, { seconds = 90, ...options } = {}) {
   }));
 }
 
-module.exports = { understand, understandBatch, normalize, REPLACEMENTS };
+// The detectors are also used by owner mode (src/owner/understand-owner.js), so dates, times and services are
+// read the same way for the owner and for customers.
+module.exports = {
+  understand, understandBatch, normalize, basicNormalize, REPLACEMENTS, WEEKDAYS, MONTHS, NUMBER_WORDS,
+  detectDate, detectTime, detectTimeOfDay, detectServices,
+};

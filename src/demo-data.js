@@ -50,6 +50,9 @@ const DEMO_BUSINESSES = [
         latePolicy: 'Te esperamos hasta 15 minutos. Si llegas más tarde intentamos atenderte, pero puede que tengamos que acortar el servicio o cambiarte la cita.',
       },
       simulatedBusy: true, // also block the simulated busy slots, so the demo calendar isn't empty
+      // TESTING ONLY: lets anyone type "login:owner" to try owner mode. Never turn it on for a real salon:
+      // real owners are recognized by their number (settings.ownerPhones).
+      devOwnerLogin: true,
     },
     services: withPrices(SAMPLE_CATALOG),
   },
@@ -71,6 +74,7 @@ const DEMO_BUSINESSES = [
         // parking: not filled in, so parking questions go to the owner
       },
       simulatedBusy: true,
+      devOwnerLogin: true, // TESTING ONLY (see above)
     },
     services: withPrices(SAMPLE_CATALOG.filter(s => BEAUTY_CATEGORIES.includes(s.category))),
   },
@@ -78,10 +82,12 @@ const DEMO_BUSINESSES = [
 
 // Creates the demo salons on first start. On later starts it only refreshes the demo salons' settings and
 // catalog (so new settings such as holidays reach an existing database); real salons are never touched.
+// A demo salon changed from owner mode is not refreshed either, so those changes survive a restart.
 async function seedDemoData(store) {
   if ((await store.listBusinesses()).length) {
     for (const b of DEMO_BUSINESSES) {
       if (!(await store.getBusiness(b.id))) continue;
+      if ((await store.listOwnerChanges(b.id, { limit: 1 })).length) continue;
       await store.saveBusiness(b);
       await store.saveServices(b.id, b.services);
     }

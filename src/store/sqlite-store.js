@@ -102,6 +102,18 @@ const MIGRATIONS = [
 
   // 5: what a service consists of, for "¿en qué consiste?"
   `ALTER TABLE services ADD COLUMN description TEXT;`,
+
+  // 6: what the owner changed from owner mode (closures, hours, prices, appointments…), so it can be undone
+  `CREATE TABLE owner_changes (
+     id          INTEGER PRIMARY KEY,
+     business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+     type        TEXT NOT NULL,                -- closeDate, setPrice, bookManual… (src/owner/reply-owner.js)
+     data        TEXT NOT NULL,                -- JSON: the change as applied
+     previous    TEXT,                         -- JSON: the value before, to undo it
+     created_at  TEXT NOT NULL,
+     undone_at   TEXT                          -- set by "deshacer"
+   );
+   CREATE INDEX owner_changes_by_business ON owner_changes (business_id, id);`,
 ];
 
 const now = () => new Date().toISOString();
@@ -158,9 +170,19 @@ class SqliteStore {
       .run(id, name, JSON.stringify(settings), now());
     return this.getBusiness(id);
   }
-  async listServices(businessId) {
-    return this.db.prepare('SELECT * FROM services WHERE business_id = ? AND active = 1 ORDER BY position')
+  // Active services only (what customers can book); { includeInactive: true } for owner mode
+  async listServices(businessId, { includeInactive = false } = {}) {
+    return this.db.prepare(`SELECT * FROM services WHERE business_id = ? ${includeInactive ? '' : 'AND active = 1'} ORDER BY position`)
       .all(businessId).map(rowToService);
+  }
+  // Changes one service: { price, duration, active }
+  async updateService(businessId, id, patch) {
+    const cur = this.db.prepare('SELECT * FROM services WHERE business_id = ? AND id = ?').get(businessId, id);
+    if (!cur) return null;
+    const s = { ...rowToService(cur), ...patch };
+    this.db.prepare('UPDATE services SET price = ?, duration = ?, active = ? WHERE business_id = ? AND id = ?')
+      .run(s.price ?? null, s.duration ?? null, s.active === false ? 0 : 1, businessId, id);
+    return rowToService(this.db.prepare('SELECT * FROM services WHERE business_id = ? AND id = ?').get(businessId, id));
   }
   // Replaces the whole catalog of a business.
   async saveServices(businessId, services) {
@@ -179,6 +201,13 @@ class SqliteStore {
     this.db.prepare(`INSERT INTO customers (business_id, phone, created_at, last_seen_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(business_id, phone) DO UPDATE SET last_seen_at = excluded.last_seen_at`).run(businessId, phone, t, t);
     return rowToCustomer(this.db.prepare('SELECT * FROM customers WHERE business_id = ? AND phone = ?').get(businessId, phone));
+  }
+  // A customer the owner books by hand, with no phone ("apunta a Lucía…"): one per name
+  async findOrCreateManualCustomer(businessId, name) {
+    const key = 'manual:' + name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-');
+    const c = await this.findOrCreateCustomer(businessId, key);
+    if (!c.name) await this.updateCustomer(businessId, c.id, { name });
+    return { ...c, name: c.name ?? name };
   }
   async updateCustomer(businessId, customerId, { name }) {
     this.db.prepare('UPDATE customers SET name = ? WHERE business_id = ? AND id = ?').run(name ?? null, businessId, customerId);
@@ -225,6 +254,14 @@ class SqliteStore {
       .run(a.service, a.name, JSON.stringify(a.details ?? []), a.date, a.time, a.duration, a.notes ?? null, a.status, now(), businessId, id);
     return rowToAppointment(this.db.prepare('SELECT * FROM appointments WHERE id = ?').get(id));
   }
+  // The calendar with each customer's name and phone, for owner mode
+  async listAgenda(businessId, { from, to, status = 'booked' } = {}) {
+    return this.db.prepare(`SELECT a.*, c.name AS customer_name, c.phone AS customer_phone FROM appointments a
+      JOIN customers c ON c.id = a.customer_id WHERE a.business_id = ? AND a.status = ?
+      AND (? IS NULL OR a.date >= ?) AND (? IS NULL OR a.date <= ?) ORDER BY a.date, a.time`)
+      .all(businessId, status, from ?? null, from ?? null, to ?? null, to ?? null)
+      .map(r => ({ ...rowToAppointment(r), customerName: r.customer_name, customerPhone: r.customer_phone }));
+  }
   async cancelAppointment(businessId, id) { return this.updateAppointment(businessId, id, { status: 'cancelled' }); }
 
   // ---- conversations ----
@@ -270,6 +307,25 @@ class SqliteStore {
       WHERE w.business_id = ? AND w.status = ? ORDER BY w.id`).all(businessId, status)
       .map(r => ({ id: r.id, customerId: r.customer_id, phone: r.phone, service: r.service, details: json(r.details, []),
         date: r.date, timeOfDay: r.time_of_day, earlier: !!r.earlier, status: r.status, createdAt: r.created_at }));
+  }
+
+  // ---- owner mode changes ----
+  async addOwnerChange({ businessId, type, data, previous = null }) {
+    const r = this.db.prepare('INSERT INTO owner_changes (business_id, type, data, previous, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(businessId, type, JSON.stringify(data), previous == null ? null : JSON.stringify(previous), now());
+    return Number(r.lastInsertRowid);
+  }
+  // The last change not undone yet ("deshacer" undoes them one by one, newest first)
+  async getLastOwnerChange(businessId) {
+    const r = this.db.prepare('SELECT * FROM owner_changes WHERE business_id = ? AND undone_at IS NULL ORDER BY id DESC LIMIT 1').get(businessId);
+    return r ? { id: r.id, type: r.type, data: json(r.data, {}), previous: json(r.previous, null), createdAt: r.created_at } : null;
+  }
+  async listOwnerChanges(businessId, { limit = 20 } = {}) {
+    return this.db.prepare('SELECT * FROM owner_changes WHERE business_id = ? ORDER BY id DESC LIMIT ?').all(businessId, limit)
+      .map(r => ({ id: r.id, type: r.type, data: json(r.data, {}), previous: json(r.previous, null), createdAt: r.created_at, undoneAt: r.undone_at }));
+  }
+  async markOwnerChangeUndone(businessId, id) {
+    this.db.prepare('UPDATE owner_changes SET undone_at = ? WHERE business_id = ? AND id = ?').run(now(), businessId, id);
   }
 
   async closeHandover(businessId, id) {

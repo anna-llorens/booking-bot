@@ -3,6 +3,9 @@
 // settings.hours: { mon: [["09:30","13:30"],["16:30","20:00"]], …, sat: [["09:00","14:00"]] }
 // A day with no entry (or an empty list) is closed. Without `hours`, they are built from the older
 // settings opens / closes / closedWeekdays, so existing salons keep working.
+//
+// settings.dateOverrides: { "2026-11-11": [["10:00","20:00"]] } — different hours for one specific day
+// (set from owner mode: "mañana abro a las 10"). They win over the weekly hours for that day only.
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -19,12 +22,16 @@ const CLOCK_RANGES = { morning: [0, 14 * 60], midday: [13 * 60, 16 * 60], aftern
 // Open intervals for each weekday (0 = Sunday), in minutes: [[start, end], …]
 function weekHours(business) {
   if (business.hours) {
-    return DAY_KEYS.map(k => (business.hours[k] ?? []).map(([a, b]) => [toMinutes(a), toMinutes(b)]).sort((x, y) => x[0] - y[0]));
+    return DAY_KEYS.map(k => toIntervals(business.hours[k] ?? []));
   }
   const closed = business.closedWeekdays ?? [];
   return DAY_KEYS.map((_, d) => (closed.includes(d) ? [] : [[toMinutes(business.opens ?? '09:30'), toMinutes(business.closes ?? '20:00')]]));
 }
-const dayHours = (business, isoDate) => weekHours(business)[weekdayOf(isoDate)];
+const toIntervals = list => list.map(([a, b]) => [toMinutes(a), toMinutes(b)]).sort((x, y) => x[0] - y[0]);
+function dayHours(business, isoDate) {
+  const override = business.dateOverrides?.[isoDate];
+  return override ? toIntervals(override) : weekHours(business)[weekdayOf(isoDate)];
+}
 // Weekdays with no opening at all (for "los domingos cerramos")
 const closedWeekdaysOf = business => weekHours(business).map((h, d) => (h.length ? null : d)).filter(d => d !== null);
 
@@ -73,6 +80,6 @@ function hoursSummary(business) {
 }
 
 module.exports = {
-  DAY_KEYS, DAY_NAMES, DAY_PLURALS, CLOCK_RANGES, toMinutes, clock,
+  DAY_KEYS, DAY_NAMES, DAY_PLURALS, CLOCK_RANGES, toMinutes, clock, weekdayOf,
   weekHours, dayHours, closedWeekdaysOf, timeOfDayIntervals, lunchBreak, fitsInside, intervalsText, hoursSummary,
 };
