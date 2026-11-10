@@ -26,6 +26,7 @@ const REPLACEMENTS = {
   ueco: 'hueco', guecos: 'huecos', kiero: 'quiero', kieres: 'quieres', aora: 'ahora',
   ago: 'hago', aser: 'hacer', cortame: 'cortarme', peindo: 'peinado', ola: 'hola',
   dema: 'manana', // Catalan "demà" (tomorrow)
+  hol: 'hola', oli: 'hola', macota: 'mascota', mascotas: 'mascota', perrito: 'perro',
   psible: 'posible', posbile: 'posible', okk: 'ok', okkk: 'ok',
   holita: 'hola', holi: 'hola', holis: 'hola', holiwi: 'hola', wenas: 'buenas', wenos: 'buenos',
   huekito: 'huequito', hueko: 'hueco', huekillo: 'huequillo', pal: 'para el', tardee: 'tarde', mananaa: 'manana',
@@ -144,15 +145,22 @@ const INFO_TOPICS = [
   ['walkIn', /\b(sin cita|sin reserva|sin pedir (cita|hora)|hay que pedir (cita|hora)|hace falta (pedir )?(cita|hora)|tengo que (pedir cita|reservar|coger cita)|hay que reservar|por orden de llegada|(puedo|se puede) (ir|pasar|pasarme|presentarme|venir) (directamente|sin))\b/],
   ['payment', /\b(bizum|efectivo|en metalico|datafono|(pagar|pago|pagais|pagan|cobrais|cobran) (con|en|por) (tarjeta|bizum|efectivo|movil)|(aceptais|admitis|cogeis|vale) (tarjeta|bizum|efectivo)|se puede pagar|como se paga|formas? de pago|metodos? de pago|con tarjeta)\b(?! regalo)/],
   ['parking', /\b(parking|aparc\w*|donde (dejo|puedo dejar|dejar) el coche|sitio para el coche|zona azul)\b/],
-  ['children', /\b(llevar|traer|ir con|venir con|vengo con|voy con|vendre con|ire con) (al|a la|a los|a las|el|la|los|las|mi|mis|a mi|a mis)? ?(nino|nina|ninos|ninas|crio|cria|crios|crias|bebe|bebes|hijo|hija|hijos|hijas|peque|peques|carrito)\b|\bpueden (venir|entrar|estar) (los )?(ninos|crios|peques)\b/],
+  ['children', /\b(llevar|traer|ir con|venir con|vengo con|voy con|vendre con|ire con) (al|a la|a los|a las|el|la|los|las|mi|mis|a mi|a mis)? ?(nino|nina|ninos|ninas|crio|cria|crios|crias|bebe|bebes|hijo|hija|hijos|hijas|peque|peques|carrito)\b|\bpueden? (venir|entrar|estar|acompanarme) (los |las |el |la |mi |mis )?(ninos|ninas|nino|nina|crios|peques|hijo|hija|hijos|hijas|bebe)\b|^(puede|pueden) venir (mi|mis) (hijo|hija|hijos|hijas)$/],
+  ['pets', /\b(mascota|perro|perra|gato|gata)\b.*\b(traer|llevar|venir|entrar|admit\w*|dej\w*|pued\w*)\b|\b(traer|llevar|ir con|venir con|entrar con) (a )?(mi|el|la)? ?(mascota|perro|perra|gato|gata)\b/],
   ['cancellationPolicy', /\b(con cuanta antelacion|cuanto (tiempo )?antes|con cuanto tiempo) (tengo que|hay que|se puede|puedo|debo|teneis que)?\s*(cancelar|anular|avisar|cambiar)|\bsi (cancelo|anulo|no voy|no vengo|no aparezco|falto|no me presento|cancelara|cancelase)\b.*\b(cobr\w*|pag\w*|pasa algo|penaliz\w*)|\b(politica|condiciones) de (cancelacion|anulacion)\b|\bpenalizacion\b|\bse cobra (si|la cancelacion|por cancelar)/],
   ['latePolicy', /\bsi (llego|llegara|llegase|me retraso|me retrasara|me retrasase)\b.*\b(mantene\w*|mantien\w*|mantendr\w*|guarda\w*|espera\w*|pierdo|perderia|pasa algo|atende\w*|atend\w*)\b|\bcuanto (tiempo|rato) (me )?(esperais|esperas|guardais)\b|\b(margen|tolerancia) (de|si llego|para llegar)\b/],
 ];
+// "¿cómo funciona la lista de espera?": an explanation, not a request to be added
+const HOW_WAITLIST = /\b(como|que es|para que (es|sirve)|en que consiste)\b.*\b(lista de espera|waiting list|wating list|waitlist|lista)\b/;
+
 const infoTopics = t => INFO_TOPICS.filter(([, re]) => re.test(t)).map(([topic]) => topic);
 // A real booking request in the same message wins over an info question ("¿me das cita el sábado? ¿aceptáis bizum?")
 const BOOKING_REQUEST = /\b(me (das|dais|puedes dar|podeis dar|coges|cogeis|apuntas|apuntais|reservas|reservais) (cita|hora|hueco)?|quiero (cita|hora|reservar)|queria (cita|hora|pedir|reservar|coger)|cita para|hueco para|reservame|reservadme|apuntame|(?<!(falta|que|necesario|obligatorio) )pedir (cita|hora))\b/;
 
 // "¿qué servicios tenéis?", "lístame todos los servicios", "¿tienes precios?": the salon's catalog
+// "¿cómo se llama la peluquería?", "¿cuál es vuestro nombre?"
+const NAME_QUESTION = /\b(como se llama(n)? (el centro|la peluqueria|el salon|el negocio|la tienda|esto|vuestro \w+|tu \w+)|como os llamais|cual es (el|vuestro) nombre|nombre del (centro|negocio|salon|local|peluqueria))\b/;
+
 const SERVICES_LIST = /\b(lista(r|me|nos|d|do)?( de)? (los |todos los |vuestros |tus )?(servicios|precios|tratamientos)|(que|cuales|cuantos) (servicios|tratamientos)( \w+){0,2} (teneis|tienes|haceis|haces|ofreceis|hay)|(todos )?(los|vuestros|tus) servicios|carta de servicios|catalogo|lista de precios|(teneis|tienes|hay) (una )?(lista|carta)|(teneis|tienes) precios|que (precios|tarifas) (teneis|tienes|hay))\b|^(y )?que (haceis|ofreceis)( (de|en) \w+)?$|\bque (haceis|ofreceis) (de|en) \w+/;
 // Category asked about: "¿qué tratamientos faciales tenéis?", "precios de uñas"
 const SERVICE_CATEGORIES = [
@@ -205,12 +213,14 @@ const ANY_TIME = /\b(la que (tengais|tengas|haya) (libre|disponible)|cualquiera(
 function detectIntent(t, raw = '') {
   // "sí, …" / "Sí" (accent or comma) is a yes; "si no os importa…" (no accent) is a condition
   const conditional = CONDITIONAL_SI.test(t) && !/^\s*¡?s[ií]+\s*[,.!]/i.test(raw) && !/^\s*¡?sí/i.test(raw);
+  if (NAME_QUESTION.test(t)) return 'name';
   if (SERVICES_LIST.test(t)) return 'services';
   // salon info questions first: "¿puedo llevar al niño? no tengo con quién dejarlo" has "quién" (off-topic list)
   if (infoTopics(t).length && !BOOKING_REQUEST.test(t) && !WAITLIST.test(t)) return 'info';
   if (NOT_BOOKING.test(t) && !EXPLICIT_BOOKING.test(t)) return null;
   t = t.replace(/\bcambio de (color|look|imagen|estilo)\b/g, 'tinte');
   t = t.replace(/\bpasar(me|nos|se|te)? (a|por) (pedir|coger|hacer|reservar|ver)\b/g, 'ir $2 $3'); // "pasarme a pedir cita" = visit, not move
+  if (HOW_WAITLIST.test(t)) return 'help';
   if (WAITLIST.test(t)) return 'waitlist';
   if (infoTopics(t).length && !BOOKING_REQUEST.test(t)) return 'info';
   if (FAREWELL.test(t)) return 'confirm';
@@ -516,7 +526,7 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
 
 // Short answers ("tarde", "9:45", "o el lunes") can only be understood knowing what the bot asked
 function applyContext(r, { lastQuestion = null, proposals = [], hasAppointment = false } = {}) {
-  const fixed = ['confirm', 'cancel', 'check', 'price', 'hours', 'late', 'thanks', 'preamble', 'undecided', 'waitlist', 'wait', 'keep', 'duration', 'event', 'info', 'services'];
+  const fixed = ['confirm', 'cancel', 'check', 'price', 'hours', 'late', 'thanks', 'preamble', 'undecided', 'waitlist', 'wait', 'keep', 'duration', 'event', 'info', 'services', 'help', 'name'];
   if (fixed.includes(r.intent)) return;
   const anything = r.time || r.date || r.timeOfDay;
   if (lastQuestion === 'proposal') {

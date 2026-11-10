@@ -695,6 +695,16 @@
     {"text":"¿qué hacéis de uñas?","expected":{"intent":"services","category":"manicura_pedicura"},"source":"test-ui"},
     {"text":"¿qué tratamientos faciales tenéis?","expected":{"intent":"services","category":"estetica_facial"},"source":"test-ui"},
     {"text":"¿qué servicios de color hay?","expected":{"intent":"services","category":"coloracion"},"source":"test-ui"},
-    {"text":"que haceis el sabado?","expected":{"intent":"book","date":"2026-11-14"},"source":"test-ui"}
+    {"text":"que haceis el sabado?","expected":{"intent":"book","date":"2026-11-14"},"source":"test-ui"},
+    {"text":"como funciona la wating list?","expected":{"intent":"help"},"source":"test-ui","note":"explains the waiting list; must not sign her up"},
+    {"text":"¿qué es la lista de espera?","expected":{"intent":"help"},"source":"generated"},
+    {"text":"puedo traer mi macota?","expected":{"intent":"info","topic":"pets"},"source":"test-ui"},
+    {"text":"¿se puede ir con el perro?","expected":{"intent":"info","topic":"pets"},"source":"generated"},
+    {"text":"puede venir mi hija ?","expected":{"intent":"info","topic":"children"},"source":"test-ui"},
+    {"text":"me he dejado el paraguas, lo habies visto?","expected":{"intent":null},"source":"test-ui","note":"lost item: the owner answers"},
+    {"text":"como se llama el centro","expected":{"intent":"name"},"source":"test-ui"},
+    {"text":"como se llama la peluqueria?","expected":{"intent":"name"},"source":"test-ui"},
+    {"text":"??????","expected":{"intent":null},"source":"test-ui","note":"reply asks what she needs; not sent to the owner"},
+    {"text":"hol","expected":{"intent":"greeting"},"source":"test-ui"}
   ]
 }

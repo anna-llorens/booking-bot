@@ -30,7 +30,8 @@ const DEFAULT_BUSINESS = {
   minNoticeMinutes: 120, // no appointment may start sooner than now + this
   maxDaysAhead: 60,      // the diary is open this many days ahead
   // Answers the owner writes when setting up the salon. Empty ones are handed to the owner.
-  info: {},              // { walkIn, payment, parking, children, cancellationPolicy, latePolicy }
+  info: {},              // { walkIn, payment, parking, children, pets, cancellationPolicy, latePolicy }
+  name: null,            // the salon's name (bot.js passes it from the businesses table)
 };
 
 const WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -651,6 +652,14 @@ function computeReply(message, state = newConversation(), {
       return out(`Esto es lo que hacemos:\n${lines.join('\n')}\nSi quieres el detalle de algo, pregúntame (por ejemplo, "¿qué hacéis de uñas?").${ending}`);
     }
 
+    case 'help':
+      // "¿cómo funciona la lista de espera?"
+      state.lastQuestion = 'offerWaitlistHelp';
+      return out('Si el día que quieres no tengo hueco, te apunto en la lista de espera. Si alguien cancela, te escribo para darte su hora 😊 Solo dime para qué servicio y qué día (por ejemplo, "avísame si se libera algo el jueves por la tarde").');
+
+    case 'name':
+      return out(business.name ? `Somos ${business.name} 😊 ¿En qué te puedo ayudar?` : 'Te contestaremos enseguida.', business.name ? {} : { handover: true });
+
     case 'undecided':
       // "luego te digo", "lo hablo con mi marido y te confirmo": nothing is booked, the offer is dropped
       state.proposals = []; state.lastQuestion = null;
@@ -913,6 +922,15 @@ function computeReply(message, state = newConversation(), {
       return out(previousTopic === 'late' ? '¡Sin problema, aquí te esperamos! 😊' : '¡Gracias por avisar! Te esperamos 🙏');
 
     default: {
+      // "??????", "...": she is waiting for an answer or didn't get the last one
+      if (!t.trim()) {
+        if (BOOKING_QUESTIONS.includes(state.lastQuestion)) { const step = nextStep(); return { ...step, reply: `Perdona 😊 ${step.reply}` }; }
+        return out('¿Sí? Dime en qué te puedo ayudar 😊 Te puedo dar cita, cambiarla o anularla.');
+      }
+      // "me he dejado el paraguas": lost things, for the owner, with a nicer answer
+      if (/\b(me he dejado|me deje|me olvide|se me olvido|he perdido|habeis visto|has visto)\b/.test(t) && !u.service && !u.date) {
+        return { ...handover('Lo miramos y te decimos enseguida 😊'), fallback: false };
+      }
       // Laughs, emojis and happy reactions ("jajaja", "😂", "¡qué bien!"): just smile back
       if (t.split(' ').every(w => isLaugh(w) || /^(xd+|lol)$/.test(w)) ||
           /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f\s]+$/u.test(message.trim()) ||
@@ -975,7 +993,7 @@ function computeReply(message, state = newConversation(), {
         const ack = isQuestion ? 'Te contestaremos enseguida.' : 'Tomo nota 😊';
         return { ...step, reply: `${ack} Mientras, ${lowerFirst(step.reply)}`, handover: true, fallback: true };
       }
-      return { ...handover('Te contestaremos enseguida.'), fallback: true };
+      return { ...handover('Te contestaremos enseguida.'), fallback: !u.offTopic };
     }
   }
 }

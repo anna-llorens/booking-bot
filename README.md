@@ -93,12 +93,14 @@ Every table is keyed by salon: a salon never sees another salon's customers. See
 | `info` (+ `topic`) | "¿atendéis sin cita?" (`walkIn`), "¿aceptáis bizum?" (`payment`), "¿dónde aparco?" (`parking`), "¿puedo llevar al niño?" (`children`), "¿con cuánta antelación tengo que cancelar?" (`cancellationPolicy`), "si llego tarde, ¿me la mantenéis?" (`latePolicy`) | Answers with the salon's `info` text; empty → the owner answers. A policy question never triggers the action (it doesn't cancel or flag her as late). With a booking in the same message, the booking goes on and the answer is added |
 | `event` | "es que tengo una boda el sábado" | "¡Qué bien! 🎉" and only proposes days before it |
 | `services` (+ `category`) | "lístame todos los servicios", "¿qué servicios tenéis?", "¿tienes precios?", "¿qué hacéis de uñas?" | Lists the salon's own catalog by category, with "desde X €" when there are prices; one category in detail if she names it. In the middle of a booking it keeps the booking |
+| `help` | "¿cómo funciona la lista de espera?" | Explains it, without signing her up |
+| `name` | "¿cómo se llama el centro?" | "Somos <salon name>" |
 | `greeting` | "hola", "buenas", "¿qué tal?" | Greets and says what it can do |
 | `thanks` | "gracias", "me encantó, sois las mejores" | Thanks back |
 | `preamble` | "una pregunta", "a ver una cosita jajaja" | "¡Claro, dime!" |
 | `null` | "¿hay parking?", "llámame mejor", anything else | Handed to the owner (see below) |
 
-Other situations handled by `reply.js`: laughs and emojis (😊), reactions ("qué fuerte" → "Vaya 😔"), apologies ("perdona!!" → "¡No pasa nada!"), "ya estoy en la puerta" (the owner is told), "no sé qué quiero hacerme" (helps her choose), "¿qué me recomiendas?" once a service is chosen (passed to the stylist), "ayer no pude ir" (no telling off: offers a new day and tells the owner), the address ("¿dónde estáis?"), "¿hacéis alisado?" ("¡Sí, hacemos…!"), "ya me dices cuando puedas" (waits for the salon).
+Other situations handled by `reply.js`: lost things ("me he dejado el paraguas" → the owner, "Lo miramos y te decimos enseguida"), only punctuation ("??????" → "¿Sí? Dime…"), laughs and emojis (😊), reactions ("qué fuerte" → "Vaya 😔"), apologies ("perdona!!" → "¡No pasa nada!"), "ya estoy en la puerta" (the owner is told), "no sé qué quiero hacerme" (helps her choose), "¿qué me recomiendas?" once a service is chosen (passed to the stylist), "ayer no pude ir" (no telling off: offers a new day and tells the owner), the address ("¿dónde estáis?"), "¿hacéis alisado?" ("¡Sí, hacemos…!"), "ya me dices cuando puedas" (waits for the salon).
 
 **Language details it copes with:** accents and capitals, stretched letters ("holaaa"), WhatsApp spellings and abbreviations ("q", "xfa", "mñn", "kiero", "huekito", "pal"), typos in service names ("tiente"), "uñas" vs "unas mechas", "la segunda **vez**" (not option 2), "las dos **cosas**" (not 14:00), conditional "si" vs "sí", "el miércoles que viene" said on a Tuesday (next week's: tomorrow would be "mañana"), Catalan "demà".
 
@@ -138,7 +140,7 @@ Each salon's settings live in `businesses.settings` (JSON). Anything left out ta
 | `minNoticeMinutes` | `120` | No appointment starts sooner than now + this |
 | `maxDaysAhead` | `60` | The diary is open this many days ahead (bot.js also loads the calendar that far) |
 | `address` | `null` | Answered to "¿dónde estáis?" |
-| `info` | `{}` | Answers the owner writes: `walkIn`, `payment`, `parking`, `children`, `cancellationPolicy`, `latePolicy`. Empty ones go to the owner |
+| `info` | `{}` | Answers the owner writes: `walkIn`, `payment`, `parking`, `children`, `pets`, `cancellationPolicy`, `latePolicy`. Empty ones go to the owner |
 | `simulatedBusy` | `false` | Demo only: also block some fake busy slots |
 
 A complete example:

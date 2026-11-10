@@ -68,7 +68,7 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
     today: now,
     now,
     services,
-    business: business.settings,
+    business: { ...business.settings, name: business.name },
     isFree,
     usual: last?.details?.length ? last.details : null,
   });

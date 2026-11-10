@@ -26,6 +26,7 @@ const DEMO_BUSINESSES = [
         payment: 'Puedes pagar en efectivo, con tarjeta o con Bizum.',
         parking: 'Hay un parking público a 50 metros (Carrer Major 30) y zona azul en la misma calle.',
         children: '¡Claro! Los peques pueden venir contigo; tenemos un rincón con cuentos para ellos.',
+        pets: 'Si es pequeña y tranquila, puede venir contigo 🐶',
         cancellationPolicy: 'Te pedimos que avises con al menos 24 horas. No cobramos nada por cancelar, pero así podemos darle el hueco a otra clienta.',
         latePolicy: 'Te esperamos hasta 15 minutos. Si llegas más tarde intentamos atenderte, pero puede que tengamos que acortar el servicio o cambiarte la cita.',
       },
@@ -45,6 +46,7 @@ const DEMO_BUSINESSES = [
         walkIn: 'Solo atendemos con cita previa.',
         payment: 'Aceptamos tarjeta y efectivo (no Bizum).',
         children: 'Preferimos que vengas sin niños, por seguridad en las cabinas.',
+        pets: 'Lo sentimos, no se admiten mascotas en el centro.',
         cancellationPolicy: 'Avisa con 24 horas. Si cancelas el mismo día, cobramos el 50 % del servicio.',
         latePolicy: 'Tenemos un margen de 10 minutos; a partir de ahí puede que tengamos que cambiarte la cita.',
         // parking: not filled in, so parking questions go to the owner
