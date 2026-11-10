@@ -13,6 +13,7 @@ function checkTurn(expect, r) {
   if ('intent' in expect && r.understanding.intent !== expect.intent) errors.push(`intent: expected ${expect.intent}, got ${r.understanding.intent}`);
   if ('handover' in expect && r.handover !== expect.handover) errors.push(`handover: expected ${expect.handover}, got ${r.handover}`);
   if ('reply' in expect && !r.reply.includes(expect.reply)) errors.push(`reply should contain "${expect.reply}"`);
+  if ('replyNot' in expect && new RegExp(expect.replyNot).test(r.reply)) errors.push(`reply should not match /${expect.replyNot}/`);
   return errors;
 }
 
@@ -35,6 +36,12 @@ function checkFinal(expected, state) {
   }
   if ('waitlist' in expected && (state.waitlist ?? []).length !== expected.waitlist) {
     errors.push(`waitlist: expected ${expected.waitlist} entries, got ${(state.waitlist ?? []).length}`);
+  }
+  if (expected.lastWaitlist) {
+    const last = (state.waitlist ?? []).at(-1) ?? {};
+    for (const [k, v] of Object.entries(expected.lastWaitlist)) {
+      if (JSON.stringify(last[k] ?? null) !== JSON.stringify(v)) errors.push(`waitlist entry ${k}: expected ${JSON.stringify(v)}, got ${JSON.stringify(last[k] ?? null)}`);
+    }
   }
   if ('lastQuestion' in expected && state.lastQuestion !== expected.lastQuestion) {
     errors.push(`lastQuestion: expected ${expected.lastQuestion}, got ${state.lastQuestion}`);

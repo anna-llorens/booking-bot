@@ -593,6 +593,15 @@ function computeReply(message, state = newConversation(), {
         }
         if (time) return out(`¡Sí! Ya la tienes ${formatDate(appt.date, today)} a las ${appt.time} 😊`);
       }
+      // "vale, la de las 17:00 si sigue libre" with no offer open (e.g. after "luego te digo"):
+      // she picked an exact time for the booking she was making, so book it if it is free
+      if (state.lastQuestion !== 'proposal' && u.time && state.pending.service && (state.pending.date || u.date)) {
+        merge();
+        const q = state.pending;
+        const open = freeSlots(q.date, { duration: q.duration || 30 }, today, business, isFree);
+        if (open.includes(toMinutes(u.time))) return book(u.time);
+        return nextStep();
+      }
       if (state.lastQuestion === 'proposal') {
         let time = null;
         if (u.option) time = u.option === -1 ? state.proposals.at(-1) : state.proposals[u.option - 1];
