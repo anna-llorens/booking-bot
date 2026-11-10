@@ -334,6 +334,10 @@ function computeReply(message, state = newConversation(), {
   // "precios de color", "precios de uñas": that category's price list (plural "precios" = a list)
   if (u.category && /\b(precios|tarifas)\b/.test(t) && !u.date && !u.time && [null, 'book', 'price', 'services'].includes(u.intent)) topic = 'services';
 
+  // "no", "tampoco" to the times on offer: none of them suits her (offer others, never a note)
+  const noneOfThem = u.noneOfThem || (state.lastQuestion === 'proposal' && /^(no|nop|tampoco|no me va|no me viene|no me cuadra|no puedo a esa hora)$/.test(t));
+  if (noneOfThem && state.lastQuestion === 'proposal' && topic !== 'reschedule') topic = 'reschedule';
+
   // "tinte" right after "¿De qué servicio quieres saber el precio?": its price
   if (state.lastQuestion === 'priceService' && u.service && !u.date && !u.time && [null, 'book', 'price'].includes(u.intent)) topic = 'price';
 
@@ -683,11 +687,16 @@ function computeReply(message, state = newConversation(), {
       return out('¡Qué bien! 🎉 ¿Quieres que te busque hueco antes?');
     }
 
-    case 'greeting':
-      if (/\b(que tal|como (estas|estais|esta|va|vais|te va|os va)|todo bien)\b/.test(t)) {
-        return out('¡Muy bien, gracias! 😊 ¿En qué te puedo ayudar? Te puedo dar cita, cambiarla o anularla.');
+    case 'greeting': {
+      const smallTalk = /\b(que tal|como (estas|estais|esta|va|vais|te va|os va|andas|andais)|todo bien|(estas|estais|esta usted) bien)\b/.test(t);
+      const hello = smallTalk ? '¡Muy bien, gracias! 😊' : '¡Hola! 😊';
+      // in the middle of a booking: answer and carry on with it
+      if (BOOKING_QUESTIONS.includes(state.lastQuestion) && state.pending.service) {
+        const step = nextStep();
+        return { ...step, reply: `${hello} ${step.reply}` };
       }
-      return out('¡Hola! 😊 ¿En qué te puedo ayudar? Te puedo dar cita, cambiarla o anularla.');
+      return out(`${hello} ¿En qué te puedo ayudar? Te puedo dar cita, cambiarla o anularla.`);
+    }
 
     case 'info': {
       // "¿aceptáis bizum?", "¿con cuánta antelación tengo que cancelar?": from settings.info, or the owner
@@ -878,7 +887,7 @@ function computeReply(message, state = newConversation(), {
 
     case 'reschedule':
       // "ninguna me va bien": a third option that day, or the same times one week later
-      if (u.noneOfThem && state.lastQuestion === 'proposal' && state.pending.date) {
+      if (noneOfThem && state.lastQuestion === 'proposal' && state.pending.date) {
         const p = state.pending;
         const sameDay = p.date;
         // every time already offered for that day, not only the last ones
@@ -893,7 +902,7 @@ function computeReply(message, state = newConversation(), {
           if (rest.length) {
             state.proposals = pickProposals(rest, null, business.maxProposals);
             state.offered = { date: sameDay, times: [...offered, ...state.proposals] };
-            return out(`Vale 😊 Ese día también tengo ${listTimes(state.proposals)}. ¿Te va bien alguna? Si no, te miro otro día.`);
+            return out(`Vale 😊 Ese día también tengo ${listTimes(state.proposals)}. ¿Te va bien${state.proposals.length > 1 ? ' alguna' : ''}? Si no, te miro otro día.`);
           }
         }
         if (!newDay) {
@@ -1089,11 +1098,17 @@ function computeReply(message, state = newConversation(), {
       if (BOOKING_QUESTIONS.includes(state.lastQuestion)) {
         const isQuestion = /\?\s*$/.test(message.trim()) ||
           /^(que|como|cuando|donde|cuanto|cuanta|cuantos|por que|porque|sabes|sabeis|teneis|tienes|hay|puedo|se puede|podeis|puedes|con que)\b/.test(t);
-        if (!isQuestion) {
+        // only a remark with some content is written down ("tengo una boda por la noche", "tiene el pelo largo");
+        // two or three loose words ("estás bien", "vale ya") are not a note
+        if (!isQuestion && (noteFrom(message, t) || t.split(' ').length >= 4)) {
           // "tiene el pelo bastante largo", "tengo una boda por la noche": written down for the stylist
           addNote(message.trim().replace(/\s+/g, ' ').slice(0, 200));
           const step = nextStep();
           return { ...step, reply: `Tomo nota 😊 Mientras, ${lowerFirst(step.reply)}` };
+        }
+        if (!isQuestion) {
+          const step = nextStep();
+          return { ...step, reply: `Perdona, no te he entendido 😅 ${step.reply}`, fallback: true };
         }
         const step = nextStep();
         return { ...step, reply: `Te contestaremos enseguida. Mientras, ${lowerFirst(step.reply)}`, handover: true, fallback: true };

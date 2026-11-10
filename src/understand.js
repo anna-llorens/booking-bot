@@ -89,7 +89,7 @@ const INTENTS = [
   // compliments go before 'book' so "me gustó mucho el color" is not read as asking for a tinte
   ['thanks', /\b(me (gusto|gustaron|encanto|encantaron) (mucho|muchisimo|un monton)|me (encanta|encantan|ha encantado|han encantado)|sois (las|los|unas|unos) mejores|(quede|estoy|he quedado) (encantada|muy contenta|contentisima)|que bien me (dejaste|dejasteis|quedo|ha quedado))\b/],
   ['book', /^(el |mi )?pelo$|^peluqueria$|\b(cita|hora|reserv\w*|pedir|quer\w*|quier\w*|quisiera|necesit\w*|hueco|huecos|huequito|huequillo|sitio|libre|puedo ir|lo de siempre|lo mismo|me atiend\w*|me apunt\w*|me coge\w*|cogerme|apuntar\w*|concertar|me gustaria|hacerme|ponerme|(que|cuando) (dia )?tienes|para el fin de semana)\b/],
-  ['greeting', /^(muy )?(hol+a+|buenas|buenos dias|buenas tardes|buenas noches|ey)\b|^(y )?(que tal|como (estas|estais|esta|va|vais|te va|os va)|todo bien)\b/],
+  ['greeting', /^(muy )?(hol+a+|buenas|buenos dias|buenas tardes|buenas noches|ey)\b|^(y )?(que tal|como (estas|estais|esta|va|vais|te va|os va|andas|andais)|todo bien|(estas|estais|esta usted) bien|que tal (estas|estais|todo|va))\b/],
   ['thanks', /\b(gracias|grax|mil gracias|muy amable|que amable)\b/],
 ];
 
