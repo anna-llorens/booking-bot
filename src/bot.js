@@ -214,7 +214,7 @@ async function handleOwner(store, { business, customer, state, text, now, today 
       reply = 'Vaya, esa hora se acaba de ocupar 😔 No he cambiado nada. Dime otra hora.';
     }
   }
-  return finish({ ...state, ownerMode: true, owner: result.state }, reply, intent, { changes: applied });
+  return finish({ ...state, ownerMode: true, owner: result.state }, reply, intent, { changes: applied, fallback: !!result.fallback });
 }
 
 // Applies one confirmed change and records it (owner_changes) with what it replaced

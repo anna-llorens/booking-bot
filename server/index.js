@@ -9,6 +9,8 @@
 //   POST /api/message      { businessId, phone, message, today? }   one customer message -> bot reply
 //   POST /api/reset        { businessId, phone }      new conversation (appointments are kept)
 //   POST /api/appointments { businessId, phone, today? }            gives her an appointment, for testing
+// Messages it can't handle are logged to private-data/not-understood.json (customers) and
+// private-data/not-understood-owner.json (owner mode), both git-ignored.
 //   GET  /api/overview?businessId=&phone=              calendar, owner inbox, her messages, settings, catalog,
 //                                                      owner-mode changes and whether this phone is in owner mode
 const http = require('http');
@@ -25,6 +27,8 @@ const PORT = Number(process.env.PORT) || 3000;
 const PAGE = path.join(__dirname, 'public', 'index.html');
 // Messages the bot did not understand. Git-ignored: what you type may contain real customer data.
 const NOT_UNDERSTOOD_FILE = process.env.NOT_UNDERSTOOD_FILE || path.join(__dirname, '..', 'private-data', 'not-understood.json');
+// The same for owner mode ("No te he entendido"), in the format of test/fixtures/owner-phrases.json
+const NOT_UNDERSTOOD_OWNER_FILE = process.env.NOT_UNDERSTOOD_OWNER_FILE || path.join(__dirname, '..', 'private-data', 'not-understood-owner.json');
 
 const localISO = d => {
   const p = n => String(n).padStart(2, '0');
@@ -37,27 +41,11 @@ const localISO = d => {
 // The whole file is rewritten each time. If it can't be parsed (e.g. you are editing it and the
 // JSON is broken for a moment), nothing is written, so existing entries are never lost.
 function logNotUnderstood(message, state, now, understanding, businessId) {
-  let entries = [];
-  let raw = null;
-  try { raw = fs.readFileSync(NOT_UNDERSTOOD_FILE, 'utf8'); } catch (err) {
-    if (err.code !== 'ENOENT') throw err; // no file yet: start a new one
-  }
-  if (raw !== null && raw.trim()) {
-    try { entries = JSON.parse(raw); } catch (err) {
-      console.warn(`⚠ Not saved: ${NOT_UNDERSTOOD_FILE} is not valid JSON right now (${err.message}). Fix the file; it was left untouched.`);
-      return 0;
-    }
-    if (!Array.isArray(entries)) {
-      console.warn(`⚠ Not saved: ${NOT_UNDERSTOOD_FILE} must contain a JSON array. It was left untouched.`);
-      return 0;
-    }
-  }
   const context = {};
   if (state?.lastQuestion) context.lastQuestion = state.lastQuestion;
   if (state?.proposals?.length) context.proposals = state.proposals;
   if (state?.appointment) context.hasAppointment = true;
-  const key = e => e.text + '|' + JSON.stringify(e.context ?? {});
-  const entry = {
+  return appendEntry(NOT_UNDERSTOOD_FILE, {
     text: message,
     expected: {},
     today: localISO(now),
@@ -65,12 +53,47 @@ function logNotUnderstood(message, state, now, understanding, businessId) {
     source: 'test-ui',
     business: businessId,
     note: understanding.offTopic ? 'off-topic on purpose (non-booking topic)' : 'no rule matched',
-  };
+  });
+}
+
+// Owner-mode messages answered with "No te he entendido". "context.pending" is what the bot was waiting for
+// (a confirmation, a choice, missing data), if anything.
+function logOwnerNotUnderstood(message, state, now, businessId) {
+  const pending = state?.owner?.pending;
+  return appendEntry(NOT_UNDERSTOOD_OWNER_FILE, {
+    text: message,
+    expected: {},
+    today: localISO(now),
+    ...(pending ? { context: { pending: pending.kind, ...(pending.action ? { action: pending.action } : {}), ...(pending.asking ? { asking: pending.asking } : {}) } } : {}),
+    source: 'test-ui',
+    business: businessId,
+  });
+}
+
+// Adds an entry to a JSON-array log file (the same text in the same context only once: its "count" goes up)
+// and returns how many entries it has. If the file can't be parsed, nothing is written.
+function appendEntry(file, entry) {
+  let entries = [];
+  let raw = null;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (err) {
+    if (err.code !== 'ENOENT') throw err; // no file yet: start a new one
+  }
+  if (raw !== null && raw.trim()) {
+    try { entries = JSON.parse(raw); } catch (err) {
+      console.warn(`⚠ Not saved: ${file} is not valid JSON right now (${err.message}). Fix the file; it was left untouched.`);
+      return 0;
+    }
+    if (!Array.isArray(entries)) {
+      console.warn(`⚠ Not saved: ${file} must contain a JSON array. It was left untouched.`);
+      return 0;
+    }
+  }
+  const key = e => e.text + '|' + JSON.stringify(e.context ?? {});
   const existing = entries.find(e => key(e) === key(entry));
   if (existing) existing.count = (existing.count ?? 1) + 1;
   else entries.push(entry);
-  fs.mkdirSync(path.dirname(NOT_UNDERSTOOD_FILE), { recursive: true });
-  fs.writeFileSync(NOT_UNDERSTOOD_FILE, `[\n${entries.map(e => '  ' + JSON.stringify(e)).join(',\n')}\n]\n`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `[\n${entries.map(e => '  ' + JSON.stringify(e)).join(',\n')}\n]\n`);
   return entries.length;
 }
 
@@ -182,6 +205,13 @@ const routes = {
     const before = (await store.getConversation(businessId, customer.id))?.state ?? null;
     const result = await handleMessage(store, { businessId, phone, text: message, now });
     // Saved: messages it could not handle. Not saved: made-up text ("dkfjgh") and laughs/reactions it answered.
+    if (result.owner) {
+      if (result.fallback) {
+        const n = logOwnerNotUnderstood(message, before, now, businessId);
+        console.log(`\n? OWNER MODE, NOT UNDERSTOOD: ${JSON.stringify(message)} — saved to private-data/not-understood-owner.json (${n} entries)`);
+      }
+      return result;
+    }
     const worthSaving = result.understanding.intent === null && result.fallback && !result.nonsense;
     const saved = worthSaving ? logNotUnderstood(message, before, now, result.understanding, businessId) : 0;
     if (result.nonsense) console.log(`\n? MADE-UP TEXT (not saved): ${JSON.stringify(message)}`);

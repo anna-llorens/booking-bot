@@ -37,7 +37,7 @@ Open http://localhost:3000 after `npm start`.
 - **Owner mode**: type `login:owner` (demo salons only) to act as the salon owner. The header shows a purple **Modo dueña** label, the examples change, and the panel adds the salon's live settings, its catalog (services turned off are struck through) and the owner's changes. `logout` goes back to the customer. See [owner mode](docs/architecture.md#owner-mode-modo-dueña).
 - **Right panel**: what the engine understood (click any bot reply to inspect that turn), the salon calendar, the owner's inbox, the waiting list, the conversation state and the raw result.
 
-The terminal shows every message handed to the owner and why. Messages the bot couldn't handle are also saved to `private-data/not-understood.json` (see [the phrase bank](#improving-it-the-phrase-bank)).
+The terminal shows every message handed to the owner and why. Messages the bot couldn't handle are also saved to `private-data/not-understood.json` (see [the phrase bank](#improving-it-the-phrase-bank)). In owner mode, messages answered with "No te he entendido" go to `private-data/not-understood-owner.json` instead, in the format of `test/fixtures/owner-phrases.json`: fill in `expected` and copy them there as tests.
 
 ## How it is built
 
