@@ -27,6 +27,8 @@ const DEFAULT_BUSINESS = {
   maxProposals: 2,       // how many times the bot offers at once
   capacity: 1,           // appointments that can overlap (chairs / staff)
   address: null,         // answered when she asks where the salon is
+  minNoticeMinutes: 120, // no appointment may start sooner than now + this
+  maxDaysAhead: 60,      // the diary is open this many days ahead
 };
 
 const WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -142,13 +144,25 @@ function closedNote(c) {
   return 'Ese día estamos cerrados 😔';
 }
 
-function freeSlots(isoDate, { duration, timeOfDay }, today, business, isFree) {
+// Last day the diary is open (now + maxDaysAhead)
+function lastBookableDate(now, business) {
+  const d = new Date(now); d.setDate(d.getDate() + (business.maxDaysAhead ?? 60));
+  return toISODate(d);
+}
+// Earliest moment an appointment may start (now + minNoticeMinutes)
+const earliestStart = (now, business) => new Date(now.getTime() + (business.minNoticeMinutes ?? 0) * 60000);
+
+// Start times (minutes) free that day: open, inside the notice window and the diary, and free in the calendar
+function freeSlots(isoDate, { duration, timeOfDay }, now, business, isFree) {
   if (closedReason(isoDate, business)) return [];
-  const nowMins = isoDate === toISODate(today) ? today.getHours() * 60 + today.getMinutes() : -1;
+  if (isoDate > lastBookableDate(now, business)) return [];
+  const earliest = earliestStart(now, business);
+  if (isoDate < toISODate(earliest)) return [];
+  const minStart = isoDate === toISODate(earliest) ? earliest.getHours() * 60 + earliest.getMinutes() : -1;
   const [from, to] = TIME_OF_DAY_RANGES[timeOfDay] ?? [0, 24 * 60];
   const slots = [];
   for (let m = toMinutes(business.opens); m + duration <= toMinutes(business.closes); m += business.slotMinutes) {
-    if (m <= nowMins || m < from || m >= to) continue;
+    if (m < minStart || m < from || m >= to) continue;
     if (isFree(isoDate, m, duration)) slots.push(m);
   }
   return slots;
@@ -219,12 +233,14 @@ function respond(message, state = newConversation(), options = {}) {
 //   business  {settings}      opening hours, closed days, capacity, address… (see DEFAULT_BUSINESS)
 //   isFree    (date, startMinutes, duration) => bool   real availability; simulated if omitted
 //   usual     [detail]        the customer's last service, for "lo de siempre"
+//   now       Date            the current moment, for minNoticeMinutes (defaults to `today`)
 function computeReply(message, state = newConversation(), {
   today = new Date(),
   services = SAMPLE_CATALOG,
   business: businessSettings = {},
   isFree = (date, start) => !isSimulatedBusy(date, start),
   usual = null,
+  now = today,
 } = {}) {
   const business = { ...DEFAULT_BUSINESS, ...businessSettings };
   state = JSON.parse(JSON.stringify(state)); // never mutate the caller's state
@@ -257,8 +273,9 @@ function computeReply(message, state = newConversation(), {
     state.recentServices = state.recentServices.slice(-3);
   };
 
-  // "No" to "¿Quieres que te busque hueco?"
-  if (state.lastQuestion === 'offerBooking' && /^no\b/.test(t) && !u.service && !u.date && !u.time) {
+  // "No" to "¿Quieres que te busque hueco?" / "¿Te apunto en la lista de espera?"
+  if (['offerBooking', 'offerWaitlist'].includes(state.lastQuestion) && /^no\b/.test(t) && !u.service && !u.date && !u.time) {
+    state.waitlistOffer = null;
     state.lastQuestion = null;
     return out('¡Vale! Aquí estamos para lo que necesites 😊');
   }
@@ -384,7 +401,7 @@ function computeReply(message, state = newConversation(), {
       const d = new Date(start); d.setDate(d.getDate() + i);
       const iso = toISODate(d);
       if (p.beforeDate && iso >= p.beforeDate) break; // "tengo una boda el sábado": before the event
-      if (freeSlots(iso, { duration: p.duration || 30, timeOfDay: p.timeOfDay }, today, business, isFree).length) return iso;
+      if (freeSlots(iso, { duration: p.duration || 30, timeOfDay: p.timeOfDay }, now, business, isFree).length) return iso;
     }
     return null;
   };
@@ -399,12 +416,28 @@ function computeReply(message, state = newConversation(), {
       return out('¿Qué servicio te quieres hacer? (corte, tinte, mechas, manicura…)');
     }
     const duration = p.duration || 30;
-    const slotsOn = iso => freeSlots(iso, { duration, timeOfDay: p.timeOfDay }, today, business, isFree).filter(m => !exclude.includes(toHHMM(m)));
+    const slotsOn = iso => freeSlots(iso, { duration, timeOfDay: p.timeOfDay }, now, business, isFree).filter(m => !exclude.includes(toHHMM(m)));
     let note = '';
+    const lastDay = lastBookableDate(now, business);
+    if (p.date && p.date > lastDay) {
+      // beyond maxDaysAhead: offer the waiting list for that day
+      state.lastQuestion = 'offerWaitlist';
+      state.waitlistOffer = { service: p.service, details: p.details ?? [], date: p.date, timeOfDay: p.timeOfDay ?? null };
+      return out(`Todavía no tengo la agenda abierta para esa fecha; puedo darte cita hasta ${formatDate(lastDay, today)}. ¿Te apunto en la lista de espera para ese día?`);
+    }
+    const todayIso = toISODate(now);
+    const earliest = earliestStart(now, business);
+    if (p.date === todayIso && p.time && toMinutes(p.time) < earliest.getHours() * 60 + earliest.getMinutes() && toISODate(earliest) === todayIso) {
+      note = `Para hoy a las ${p.time} ya no me da tiempo 😔`;
+      delete p.time;
+    }
     if (p.date && !slotsOn(p.date).length) {
       const closed = closedReason(p.date, business);
+      // nothing left today only because of the notice: "para hoy ya no me da tiempo"
+      const tooLate = !closed && p.date === todayIso &&
+        freeSlots(p.date, { duration, timeOfDay: p.timeOfDay }, new Date(fromISODate(todayIso)), business, isFree).length > 0;
       const slotText = p.timeOfDay ? { morning: ' por la mañana', midday: ' a mediodía', afternoon: ' por la tarde' }[p.timeOfDay] : '';
-      note = closed ? closedNote(closed) : `No me queda hueco ${formatDate(p.date, today)}${slotText} 😔`;
+      note = closed ? closedNote(closed) : tooLate ? 'Para hoy ya no me da tiempo 😔' : `No me queda hueco ${formatDate(p.date, today)}${slotText} 😔`;
       // holidays: look from the day after they end
       const next = fromISODate(closed?.kind === 'range' ? closed.to : p.date); next.setDate(next.getDate() + 1);
       p.fromDate = toISODate(next);
@@ -451,6 +484,12 @@ function computeReply(message, state = newConversation(), {
   // Books (or moves) the appointment at the chosen time.
   const book = time => {
     const p = state.pending;
+    // never accept a slot that is no longer valid (notice window passed, taken, outside the diary)
+    if (!freeSlots(p.date, { duration: p.duration || 30 }, now, business, isFree).includes(toMinutes(time))) {
+      delete p.time;
+      const step = nextStep({ exclude: [time] });
+      return { ...step, reply: `Vaya, a las ${time} ya no puedo darte cita 😔 ${step.reply}` };
+    }
     const wasReschedule = state.mode === 'reschedule' && appt;
     state.appointment = {
       ...(wasReschedule && appt.id ? { id: appt.id } : {}),
@@ -510,7 +549,7 @@ function computeReply(message, state = newConversation(), {
       merge();
       const q = state.pending;
       if (q.service && q.date) {
-        const open = freeSlots(q.date, { duration: q.duration || 30 }, today, business, isFree);
+        const open = freeSlots(q.date, { duration: q.duration || 30 }, now, business, isFree);
         const free = times.filter(h => open.includes(toMinutes(h)));
         if (free.length) {
           q.time = free[0];
@@ -628,7 +667,7 @@ function computeReply(message, state = newConversation(), {
       if (state.lastQuestion !== 'proposal' && u.time && state.pending.service && (state.pending.date || u.date)) {
         merge();
         const q = state.pending;
-        const open = freeSlots(q.date, { duration: q.duration || 30 }, today, business, isFree);
+        const open = freeSlots(q.date, { duration: q.duration || 30 }, now, business, isFree);
         if (open.includes(toMinutes(u.time))) return book(u.time);
         return nextStep();
       }
@@ -655,6 +694,14 @@ function computeReply(message, state = newConversation(), {
       }
       // "mejor esa": the time she just mentioned
       if (state.lastQuestion === 'proposal' && /\b(esa|ese)\b/.test(t) && state.proposals.includes(state.pending.time)) return book(state.pending.time);
+      // "sí" to "¿Te apunto en la lista de espera para ese día?" (date beyond the open diary)
+      if (state.lastQuestion === 'offerWaitlist' && state.waitlistOffer) {
+        const entry = { ...state.waitlistOffer, earlier: false };
+        state.waitlist = [...(state.waitlist ?? []), entry];
+        state.waitlistOffer = null; state.lastQuestion = null; state.proposals = []; state.pending = {};
+        const what = entry.details.length ? ` para ${serviceLabel(entry)}` : '';
+        return out(`¡Hecho! Te apunto en la lista de espera${what} ${formatDate(entry.date, today)}. En cuanto abra la agenda, te escribo 😊`, { waitlist: entry });
+      }
       // "sí" to "¿Quieres que te busque hueco?" / "¿Quieres pedir una?": start the booking
       if (state.lastQuestion === 'offerBooking') { state.mode = 'book'; state.pending = {}; return nextStep(); }
       if (state.lastQuestion === 'proposal' && state.proposals.length === 1) return book(state.proposals[0]);
@@ -683,7 +730,7 @@ function computeReply(message, state = newConversation(), {
         const namedDay = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|manana|pasado manana|\d{1,2})\b/.test(t);
         const newDay = u.date && (namedDay || !nextWeek);
         if (!nextWeek && !newDay && !u.time) {
-          const rest = freeSlots(sameDay, { duration: p.duration || 30, timeOfDay: p.timeOfDay }, today, business, isFree)
+          const rest = freeSlots(sameDay, { duration: p.duration || 30, timeOfDay: p.timeOfDay }, now, business, isFree)
             .filter(m => !offered.includes(toHHMM(m)));
           if (rest.length) {
             state.proposals = pickProposals(rest, null, business.maxProposals);

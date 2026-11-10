@@ -9,11 +9,10 @@
 //      both messages, and a handover to the owner's inbox when needed
 //
 // understand.js and reply.js never touch the store; this file is the only place that does.
-const { respond, newConversation, isSimulatedBusy, closedReason } = require('./reply');
+const { respond, newConversation, isSimulatedBusy, closedReason, DEFAULT_BUSINESS } = require('./reply');
 
 // A conversation idle for longer than this starts fresh (her appointments are kept, they live in the store)
 const CONVERSATION_TIMEOUT_HOURS = 8;
-const CALENDAR_DAYS_AHEAD = 30;
 
 const toISODate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const toMinutes = hhmm => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
@@ -60,12 +59,14 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
   state = { ...state, appointment: toStateAppointment(upcoming) };
   const last = await store.getLastAppointment(businessId, customer.id, today);
 
-  const until = new Date(now); until.setDate(until.getDate() + CALENDAR_DAYS_AHEAD);
+  // load the calendar as far as the diary is open
+  const until = new Date(now); until.setDate(until.getDate() + (business.settings.maxDaysAhead ?? DEFAULT_BUSINESS.maxDaysAhead));
   const calendar = await store.listAppointments(businessId, { from: today, to: toISODate(until) });
   const isFree = makeIsFree(calendar, business.settings, upcoming?.id);
 
   const result = respond(text, state, {
     today: now,
+    now,
     services,
     business: business.settings,
     isFree,

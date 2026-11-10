@@ -115,6 +115,40 @@ const cases = {
     const [b] = chat(['con que nombre me tienes guardado?']);
     assert.ok(b.handover, 'a real question it cannot answer goes to the owner');
   },
+  'minimum notice: no slot starts sooner than now + 120 minutes': () => {
+    const at = (h, m = 0) => new Date(2026, 10, 10, h, m);
+    // "para hoy" at 19:00: too late for today, first slots tomorrow
+    let [r] = [respond('quiero cita para corte para hoy', newConversation(), { today: at(19) })];
+    assert.match(r.reply, /^Para hoy ya no me da tiempo 😔 Lo primero que tengo para corte es mañana/);
+    assert.equal(r.state.pending.date, '2026-11-11');
+    // exactly at the limit: 17:30 + 120 min = 19:30, and 19:30 is the last free slot today
+    r = respond('corte hoy', newConversation(), { today: at(17, 30) });
+    assert.deepEqual(r.state.proposals, ['19:30']);
+    r = respond('corte hoy', newConversation(), { today: at(17, 31) });
+    assert.doesNotMatch(r.reply, /hoy tengo/, 'one minute later 19:30 is too soon');
+    // asking for a time inside the window
+    r = respond('corte hoy a las 12', newConversation(), { today: at(11) });
+    assert.match(r.reply, /^Para hoy a las 12:00 ya no me da tiempo/);
+    assert.ok(r.state.proposals.every(t => t >= '13:00'));
+    // accepting late: 12:00 offered at 9:00 is no longer valid at 10:30
+    r = respond('corte hoy a las 12', newConversation(), { today: at(9) });
+    const late = respond('sí', r.state, { today: at(10, 30) });
+    assert.equal(late.state.appointment, null);
+    assert.match(late.reply, /a las 12:00 ya no puedo darte cita/);
+  },
+  'maximum days ahead: beyond 60 days, offers the waiting list': () => {
+    const now = new Date(2026, 10, 10, 10);
+    let r = respond('quiero cita para corte el 20 de enero', newConversation(), { today: now });
+    assert.match(r.reply, /^Todavía no tengo la agenda abierta para esa fecha; puedo darte cita hasta el sábado 9 de enero\. ¿Te apunto en la lista de espera/);
+    r = respond('sí', r.state, { today: now });
+    assert.equal(r.waitlist.date, '2027-01-20');
+    assert.equal(r.state.appointment, null);
+    r = respond('corte el 9 de enero', newConversation(), { today: now });
+    assert.equal(r.state.lastQuestion, 'proposal', 'day 60 is still bookable');
+    r = respond('mechas el 15 de febrero', newConversation(), { today: now });
+    r = respond('no', r.state, { today: now });
+    assert.equal(r.state.waitlist.length, 0);
+  },
   'does not mutate the state it receives': () => {
     const s = newConversation();
     respond('quiero cita para corte', s, { today });

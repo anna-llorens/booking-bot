@@ -58,7 +58,8 @@ const cases = {
     await say(store, SALON, '622', 'corte el viernes a las 10');
     await say(store, SALON, '622', 'sí');                          // 622 takes it first
     const r = await say(store, SALON, '611', 'sí');
-    assert.match(r.reply, /se acaba de ocupar/);
+    // reply.js already sees the slot is gone (calendar loaded for this message); bot.js re-checks for real races
+    assert.match(r.reply, /ya no puedo darte cita|se acaba de ocupar/);
     assert.equal((await store.listAppointments(SALON)).length, 1);
   },
 
