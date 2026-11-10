@@ -124,7 +124,7 @@ Other situations handled by `reply.js`: lost things ("me he dejado el paraguas" 
 - After **2 messages in a row** it doesn't understand, it stops answering (the owner still gets them).
 - It never sends the same text twice in a row; if she adds something but the times on offer don't change, it says so ("Es lo que tengo 😊 …").
 
-**Conversations** reset after 8 hours of silence; appointments live in the database, not in the conversation.
+**Conversations** reset after 8 hours of silence, and an offer of times left unanswered for 3 hours is dropped (a later "hola" starts fresh). Appointments live in the database, not in the conversation. "No quiero X" drops that service and asks what she wants (or switches if she names another one).
 
 ## Salon settings
 

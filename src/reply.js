@@ -216,6 +216,7 @@ function serviceExamples(services, max = 4) {
 // After MAX_MISUNDERSTOOD messages in a row it didn't understand, the bot stops answering
 // (the owner still gets them and they are still logged) until she says something it understands.
 const MAX_MISUNDERSTOOD = 2;
+const STALE_OFFER_MINUTES = 180; // an offer left unanswered this long is dropped
 
 function respond(message, state = newConversation(), options = {}) {
   const previousReply = state?.lastReply ?? null;
@@ -262,6 +263,12 @@ function computeReply(message, state = newConversation(), {
 } = {}) {
   const business = { ...DEFAULT_BUSINESS, ...businessSettings };
   state = JSON.parse(JSON.stringify(state)); // never mutate the caller's state
+  // An offer left unanswered for more than 3 hours is stale: start fresh (confirmed appointments are kept)
+  if (state.lastAt && now - new Date(state.lastAt) > STALE_OFFER_MINUTES * 60000) {
+    state.pending = {}; state.proposals = []; state.lastQuestion = null; state.mode = 'book';
+    state.offered = null; state.waitlistOffer = null; state.lastReply = null; state.lastMessage = null; state.misunderstood = 0;
+  }
+  state.lastAt = now.toISOString();
   const u = understand(message, {
     today,
     services,
@@ -601,6 +608,21 @@ function computeReply(message, state = newConversation(), {
   if (/\b(ya me (dices|diras|contaras|cuentas|comentas)|me (dices|cuentas|comentas) algo|me (dices|cuentas) cuando (puedas|sepas|lo veas))\b/.test(t) && !u.date && !u.time) {
     topic = 'waitSalon';
     return out('¡Claro! En cuanto lo vea la peluquera, te escribe 😊');
+  }
+
+  // "no quiero depilación (, quiero manicura)": drop that service; use the other one if she names it
+  if (/^(no|pero no) (quiero|queria|busco|necesito|me interesa|me apetece)\b/.test(t) && !u.date && !u.time &&
+      ['book', null, 'reschedule'].includes(u.intent)) {
+    const wanted = u.details.length > 1 ? u.details.slice(-1) : [];
+    state.pending = wanted.length ? { service: wanted[0].group, details: wanted, duration: wanted[0].duration ?? null } : {};
+    state.proposals = []; state.mode = 'book';
+    topic = 'notThat';
+    if (wanted.length) {
+      const step = nextStep();
+      return { ...step, reply: `¡Vale! ${step.reply}` };
+    }
+    state.lastQuestion = 'service';
+    return out(`¡Vale! ¿Qué te quieres hacer entonces? (${serviceExamples(services).join(', ')}…) Si quieres, te enseño la lista («servicios»).`);
   }
 
   // "no sé qué quiero hacerme", "¿qué me recomiendas?": help her choose (before "quiero" makes it a booking)

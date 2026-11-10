@@ -299,7 +299,7 @@ function detectServices(t, catalog) {
       if (w.length >= 5 && !COMMON_WORDS.has(w) && !isRealWord(w)) {
         for (const service of cat) {
           const ok = service.synonyms.some(s => !s.includes(' ') && s.length >= 5 &&
-            (s.length >= 6 || TYPO_TOLERANT.has(s)) && distance(w, s) <= 1);
+            (s.length >= 6 || TYPO_TOLERANT.has(s)) && distance(w, s) <= (s.length >= 10 ? 2 : 1)); // long words: 2 typos ("depelicacion")
           if (ok) { found.push({ start: pos, end: pos + w.length, service }); break; }
         }
       }
