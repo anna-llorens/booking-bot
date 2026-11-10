@@ -1,0 +1,17 @@
+{
+  "name": "booking-bot",
+  "version": "0.3.0",
+  "description": "Apunta'm: understands WhatsApp messages from hair salon and beauty center customers and books their appointments, without AI",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "test": "node test/understand.test.js && node test/reply.test.js && node test/conversations.test.js && node --disable-warning=ExperimentalWarning test/store.test.js",
+    "demo": "node scripts/demo.js",
+    "import": "node scripts/import-whatsapp.js",
+    "merge": "node scripts/merge-phrases.js",
+    "build-dictionary": "node scripts/build-dictionary.js"
+  },
+  "engines": { "node": ">=22.13" },
+  "license": "UNLICENSED",
+  "private": true
+}

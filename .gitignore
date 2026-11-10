@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+.env
+
+# Exported WhatsApp chats that are not anonymized: NEVER commit them (GDPR)
+private-data/
+datos-privados/
+*.chat.txt
