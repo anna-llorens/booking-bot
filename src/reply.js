@@ -342,8 +342,12 @@ function computeReply(message, state = newConversation(), {
   // "precios de color", "precios de uñas": that category's price list (plural "precios" = a list)
   if (u.category && /\b(precios|tarifas)\b/.test(t) && !u.date && !u.time && [null, 'book', 'price', 'services'].includes(u.intent)) topic = 'services';
 
-  // "no", "tampoco" to the times on offer: none of them suits her (offer others, never a note)
-  const noneOfThem = u.noneOfThem || (state.lastQuestion === 'proposal' && /^(no|nop|tampoco|no me va|no me viene|no me cuadra|no puedo a esa hora)$/.test(t));
+  // "otro", "otro día", "mejor otro" after "…¿o prefieres otro día?": the next day with room
+  if (state.lastQuestion === 'proposal' && state.pending.date && !u.date && !u.time && !u.service &&
+      /^(y )?(otro|otro dia|otro dia mejor|mejor otro( dia)?|prefiero otro( dia)?|otra fecha|otro diferente|otro distinto|el siguiente|el dia siguiente|al dia siguiente)( (por la|de) (manana|tarde)| a mediodia)?( porfa| por favor| mejor)?$/.test(t)) topic = 'nextDay';
+  // "no", "tampoco", "otra", "otra hora" to the times on offer: none of them suits her (offer others, never a note)
+  const noneOfThem = u.noneOfThem || (state.lastQuestion === 'proposal' &&
+    /^(no|nop|tampoco|no me va|no me viene|no me cuadra|no puedo a esa hora|otra|otras|otra hora|otras horas|otra mejor)( porfa| por favor)?$/.test(t));
   if (noneOfThem && state.lastQuestion === 'proposal' && topic !== 'reschedule') topic = 'reschedule';
 
   // "¿tienes más horarios?", "¿hay más huecos?", "¿alguna hora más?" while times are on offer: more times that day
@@ -773,6 +777,16 @@ function computeReply(message, state = newConversation(), {
   switch (topic) {
     case 'moreTimes':
       return moreTimes();
+
+    case 'nextDay': {
+      // look from the day after the one on offer ("otro día por la tarde" keeps the time of day)
+      const p = state.pending;
+      if (u.timeOfDay) p.timeOfDay = u.timeOfDay;
+      const next = fromISODate(p.date); next.setDate(next.getDate() + 1);
+      p.fromDate = toISODate(next);
+      delete p.date; delete p.time; delete p.altDate;
+      return nextStep();
+    }
 
     case 'wait':
       // "espera", "voy a mirar una cosa": nothing changes, whatever was on offer is still on offer
