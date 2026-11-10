@@ -310,9 +310,17 @@ function computeReply(message, state = newConversation(), {
     }
     if (u.intent === 'confirm' && !u.service && !u.date && !u.time) return out('¡Claro! Dime 😊');
   }
-  // "manos y pies" right after the services list (or when asked for the service): that category in detail
-  if ((previousTopic === 'services' || state.lastQuestion === 'service') && u.category && !u.service &&
-      [null, 'book', 'reschedule'].includes(u.intent) && !u.date && !u.time) topic = 'services';
+  // A category on its own ("manos y pies", "corporal") or, right after the list, a category that is also a
+  // general service ("depilación"): list that category's services. It doesn't change the booking in progress
+  // and it is never written down as a note.
+  {
+    const onlyCategory = u.category && !u.service && t.split(' ').length <= 4;
+    // the category names as the list shows them ("depilación" is both a category and a general service)
+    const genericAfterList = u.category && previousTopic === 'services' &&
+      /^(la |el |lo de |de )?(peluqueria|color|coloracion|tratamientos( capilares)?|barberia|facial|corporal|depilacion|manos y pies|unas|cejas y pestanas|cejas|pestanas)$/.test(t);
+    if ((onlyCategory || genericAfterList || ((previousTopic === 'services' || state.lastQuestion === 'service') && u.category && !u.service)) &&
+        [null, 'book', 'reschedule'].includes(u.intent) && !u.date && !u.time) topic = 'services';
+  }
 
   // "las dos cosas" / "ambas" right after "¿Para X, Y o las dos cosas?"
   if (state.lastQuestion === 'service' && state.recentServices?.length > 1 && !u.service && u.intent !== 'price' &&
@@ -681,8 +689,12 @@ function computeReply(message, state = newConversation(), {
       if (u.category) {
         const list = services.filter(s => s.category === u.category);
         if (!list.length) return out(`Ahora mismo no hacemos ${CATEGORY_LABELS[u.category]?.replace(/^\S+ /, '').toLowerCase() ?? 'eso'} 😔 ¿Te puedo ayudar con otra cosa?`);
-        const lines = list.slice(0, 12).map(s => `• ${displayName(s)}${s.price != null ? `: ${euros(s.price)}` : ''}`);
-        return out(`${CATEGORY_LABELS[u.category] ?? 'Servicios'}:\n${lines.join('\n')}${list.length > 12 ? '\n• …y más' : ''}\n${ending.trim()}`.trim());
+        const lines = list.slice(0, 30).map(s => `• ${displayName(s)}${s.price != null ? `: ${euros(s.price)}` : ''}`);
+        // in the middle of a booking, remind her of it instead of changing the subject
+        const still = keepBooking && state.pending.service && state.proposals.length
+          ? `\nSi prefieres otro de estos, dímelo. Si no, sigo con ${serviceLabel(state.pending)}: ${listTimes(state.proposals)} 😊`
+          : keepBooking ? '' : `\n${ending.trim()}`;
+        return out(`${CATEGORY_LABELS[u.category] ?? 'Servicios'}:\n${lines.join('\n')}${list.length > 30 ? '\n• …y más' : ''}${still}`);
       }
       const order = Object.keys(CATEGORY_LABELS);
       const cats = [...new Set(services.map(s => s.category))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
