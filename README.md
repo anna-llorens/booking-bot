@@ -8,6 +8,7 @@ Customers write in Spanish, so the dictionaries, rules and bot replies are in Sp
 - [How it is built](#how-it-is-built) (details in [docs/architecture.md](docs/architecture.md))
 - [What the bot understands](#what-the-bot-understands)
 - [How the bot behaves](#how-the-bot-behaves)
+- [Salon settings](#salon-settings)
 - [Data and privacy](#data-and-privacy)
 - [Improving it: the phrase bank](#improving-it-the-phrase-bank)
 - [Tests](#tests)
@@ -88,7 +89,8 @@ Every table is keyed by salon: a salon never sees another salon's customers. See
 | `late` | "llegaré 10 minutos tarde", "voy un poco justa", "hay mucho tráfico" | "¡Gracias por avisar! Te esperamos" |
 | `price` | "¿cuánto cuesta el tinte?", "¿y cortar las puntas también?", "todo junto cuánto sería?" | Answers from the catalog; no price in the catalog → the owner answers |
 | `duration` | "¿cuánto dura?", "¿cuánto se tarda en las mechas?" | Answers from the catalog ("unas 2 horas") |
-| `hours` | "¿abrís los sábados?", "¿y por la tarde también?" | Answers from the salon's settings |
+| `hours` | "¿abrís los sábados?", "¿y por la tarde también?", "¿abrís el 8 de diciembre?", "¿cerráis en agosto?" | Answers from the salon's settings, including public holidays and holidays |
+| `info` (+ `topic`) | "¿atendéis sin cita?" (`walkIn`), "¿aceptáis bizum?" (`payment`), "¿dónde aparco?" (`parking`), "¿puedo llevar al niño?" (`children`), "¿con cuánta antelación tengo que cancelar?" (`cancellationPolicy`), "si llego tarde, ¿me la mantenéis?" (`latePolicy`) | Answers with the salon's `info` text; empty → the owner answers. A policy question never triggers the action (it doesn't cancel or flag her as late). With a booking in the same message, the booking goes on and the answer is added |
 | `event` | "es que tengo una boda el sábado" | "¡Qué bien! 🎉" and only proposes days before it |
 | `greeting` | "hola", "buenas", "¿qué tal?" | Greets and says what it can do |
 | `thanks` | "gracias", "me encantó, sois las mejores" | Thanks back |
@@ -105,6 +107,8 @@ Other situations handled by `reply.js`: laughs and emojis (😊), reactions ("qu
 
 **It proposes, it doesn't ask.** With a service it always offers 2 times on the first day that has room ("Lo primero que tengo para corte es mañana: 1) 10:00 2) 17:30. ¿Cuál te va mejor, o prefieres otro día?"). Closed or full day → it says so and offers the next one. "Ninguna" → other times that day, never repeating one, then the same times a week later.
 
+**It respects the diary.** Weekly days off, public holidays (`closedDates`: "Ese día estamos cerrados (festivo) 😔") and holidays (`closedRanges`: "Del 10 al 24 de agosto estamos de vacaciones 😔") are never proposed; it offers the next open day. Nothing starts sooner than `minNoticeMinutes` from now ("Para hoy ya no me da tiempo 😔", and a time that falls inside that window by the time she says yes is not booked). Beyond `maxDaysAhead` it says how far the diary is open and offers the waiting list for that day.
+
 **It never does something irreversible on a guess.** Cancelling always asks first. "Sí" + a day that isn't her appointment's asks before moving it. A slot taken by someone else between the proposal and her "sí" is not double-booked ("esa hora se acaba de ocupar"). "Lo hablo con mi marido y te confirmo" books nothing.
 
 **Closing a booking** repeats service, day and time in one message, so she has it in writing.
@@ -116,6 +120,53 @@ Other situations handled by `reply.js`: laughs and emojis (😊), reactions ("qu
 - It never sends the same text twice in a row; if she adds something but the times on offer don't change, it says so ("Es lo que tengo 😊 …").
 
 **Conversations** reset after 8 hours of silence; appointments live in the database, not in the conversation.
+
+## Salon settings
+
+Each salon's settings live in `businesses.settings` (JSON). Anything left out takes the default from `DEFAULT_BUSINESS` in `src/reply.js`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `opens`, `closes` | `"09:30"`, `"20:00"` | Opening hours (every open day) |
+| `closedWeekdays` | `[0]` | Weekly days off (0 = Sunday … 6 = Saturday) |
+| `closedDates` | `[]` | Public holidays: `"2026-12-08"` or `{ "date": "2026-12-26", "reason": "Sant Esteve" }` |
+| `closedRanges` | `[]` | Holidays or other closures: `{ "from": "2026-08-10", "to": "2026-08-24", "reason": "vacaciones" }` |
+| `slotMinutes` | `30` | Proposals start every 30 minutes |
+| `maxProposals` | `2` | Times offered at once |
+| `capacity` | `1` | Appointments that may overlap (chairs / staff) |
+| `minNoticeMinutes` | `120` | No appointment starts sooner than now + this |
+| `maxDaysAhead` | `60` | The diary is open this many days ahead (bot.js also loads the calendar that far) |
+| `address` | `null` | Answered to "¿dónde estáis?" |
+| `info` | `{}` | Answers the owner writes: `walkIn`, `payment`, `parking`, `children`, `cancellationPolicy`, `latePolicy`. Empty ones go to the owner |
+| `simulatedBusy` | `false` | Demo only: also block some fake busy slots |
+
+A complete example:
+
+```json
+{
+  "opens": "09:30",
+  "closes": "20:00",
+  "closedWeekdays": [0],
+  "closedDates": ["2026-12-08", "2026-12-25", { "date": "2026-12-26", "reason": "Sant Esteve" }],
+  "closedRanges": [{ "from": "2027-08-09", "to": "2027-08-22", "reason": "vacaciones" }],
+  "slotMinutes": 30,
+  "maxProposals": 2,
+  "capacity": 1,
+  "minNoticeMinutes": 120,
+  "maxDaysAhead": 60,
+  "address": "Carrer Major 12, Barcelona",
+  "info": {
+    "walkIn": "Trabajamos con cita previa, pero si tenemos un hueco libre te atendemos sin problema 😊",
+    "payment": "Puedes pagar en efectivo, con tarjeta o con Bizum.",
+    "parking": "Hay un parking público a 50 metros (Carrer Major 30) y zona azul en la misma calle.",
+    "children": "¡Claro! Los peques pueden venir contigo; tenemos un rincón con cuentos para ellos.",
+    "cancellationPolicy": "Te pedimos que avises con al menos 24 horas. No cobramos nada por cancelar.",
+    "latePolicy": "Te esperamos hasta 15 minutos. Si llegas más tarde, puede que tengamos que cambiarte la cita."
+  }
+}
+```
+
+The two demo salons in `src/demo-data.js` have examples of all of these (the beauty center leaves `parking` empty, so that question goes to the owner). Their settings are refreshed from the code on every start; real salons are never touched.
 
 ## Data and privacy
 
@@ -148,10 +199,10 @@ Labelling tips: not every "vale" is `confirm` (it can be `undecided`, or the ans
 
 | File | Checks |
 |---|---|
-| `test/understand.test.js` + `test/fixtures/phrases.json` | 673 single messages (intent, service, date, time…) |
+| `test/understand.test.js` + `test/fixtures/phrases.json` | 686 single messages (intent, topic, service, date, time…) |
 | `test/reply.test.js` | Short scripted conversations through `respond()` |
-| `test/conversations.test.js` + `test/fixtures/conversations.json` | 28 whole conversations: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
-| `test/store.test.js` | Database and `bot.js` end to end on an in-memory SQLite: salons kept apart, no double booking, moves update, cancel asks first, "lo de siempre" from history, phone formats, GDPR delete |
+| `test/conversations.test.js` + `test/fixtures/conversations.json` | 37 whole conversations, optionally with salon settings: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
+| `test/store.test.js` | Database and `bot.js` end to end on an in-memory SQLite: salons kept apart, no double booking, moves update, cancel asks first, "lo de siempre" from history, phone formats, holidays, GDPR delete |
 
 `npm test` runs all four.
 

@@ -57,7 +57,7 @@ function preparedCatalog(catalog) {
 }
 
 // Messages that are not about appointments: handed to the owner (intent null).
-const NOT_BOOKING = /\b(foto|fotos|champu|producto|productos|paraguas|partido|he llegado|estoy en la puerta|estoy fuera|es normal|quien|donde estais|direccion|aparcar|parking|instagram|bizum|tarjeta regalo|hac(eis|es) tambien|ofreceis|curso|estudiar|feliz|felicidades|recomendado|cambio de look|dia mas|escaparate|gafas|os llamo|te llamo|llamare|movil|telefono|llamar|buscando trabajo|disfraz|carnaval|tarjetas?|secador\w*|facebook|efectivo|hace (hoy|un dia|sol|frio|calor))\b|^ja(ja)+$/;
+const NOT_BOOKING = /\b(foto|fotos|champu|producto|productos|paraguas|partido|he llegado|estoy en la puerta|estoy fuera|es normal|quien|donde estais|direccion|instagram|tarjetas? regalo|hac(eis|es) tambien|ofreceis|curso|estudiar|feliz|felicidades|recomendado|cambio de look|dia mas|escaparate|gafas|os llamo|te llamo|llamare|movil|telefono|llamar|buscando trabajo|disfraz|carnaval|secador\w*|facebook|hace (hoy|un dia|sol|frio|calor))\b|^ja(ja)+$/;
 
 // Short confirmations ("vale", "sí", 👍): they only count if they don't bring a new day.
 const FAREWELL = /^(hasta (manana|luego|el|la|entonces|pronto)|nos vemos|adios|chao|chau|bye|un beso|besos|besitos)\b/;
@@ -138,6 +138,20 @@ const CONFIRM_AT_END = /\b(confirmad[oa]|lo confirmo|te lo confirmo|confirmo|que
 // Future or conditional "te confirmo" is not a confirmation.
 const UNDECIDED = /\b(se lo (digo|dire|comento|pregunto|consulto)|le (pregunto|consulto)|(lo|se lo) consulto|luego (te|os) (lo |la )?(digo|escribo|confirmo|cuento|aviso)|ya (te|os) (lo |la )?(digo|dire|escribo|escribire|aviso|avisare|confirmo|confirmare|cuento|contare)|(te|os) (lo |la )?(digo|dire|confirmo|escribo) (algo|luego|mas tarde|manana|cuando|en cuanto)|y (te|os) (lo |la )?(digo|confirmo|aviso|escribo|cuento)( algo)?$|lo miro( con| y|$)|lo (hablo|hablare|consulto|consultare|comento|comentare|miro) con|(lo )?tengo que (hablar|mirar|pensar|consultar)(lo)?|(me )?lo (pienso|pensare|voy a pensar)|dejame (que lo|pensarlo|mirarlo|verlo)|(todavia|aun) no (se|lo se|lo tengo claro|tengo claro)|no puedo mirarlo|ya (lo )?(veremos|vere))\b/;
 
+// Questions about how the salon works, answered from the salon's "info" settings. A policy question
+// ("¿con cuánta antelación tengo que cancelar?", "si llego tarde, ¿me la mantenéis?") is not the action itself.
+const INFO_TOPICS = [
+  ['walkIn', /\b(sin cita|sin reserva|sin pedir (cita|hora)|hay que pedir (cita|hora)|hace falta (pedir )?(cita|hora)|tengo que (pedir cita|reservar|coger cita)|hay que reservar|por orden de llegada|(puedo|se puede) (ir|pasar|pasarme|presentarme|venir) (directamente|sin))\b/],
+  ['payment', /\b(bizum|efectivo|en metalico|datafono|(pagar|pago|pagais|pagan|cobrais|cobran) (con|en|por) (tarjeta|bizum|efectivo|movil)|(aceptais|admitis|cogeis|vale) (tarjeta|bizum|efectivo)|se puede pagar|como se paga|formas? de pago|metodos? de pago|con tarjeta)\b(?! regalo)/],
+  ['parking', /\b(parking|aparc\w*|donde (dejo|puedo dejar|dejar) el coche|sitio para el coche|zona azul)\b/],
+  ['children', /\b(llevar|traer|ir con|venir con|vengo con|voy con|vendre con|ire con) (al|a la|a los|a las|el|la|los|las|mi|mis|a mi|a mis)? ?(nino|nina|ninos|ninas|crio|cria|crios|crias|bebe|bebes|hijo|hija|hijos|hijas|peque|peques|carrito)\b|\bpueden (venir|entrar|estar) (los )?(ninos|crios|peques)\b/],
+  ['cancellationPolicy', /\b(con cuanta antelacion|cuanto (tiempo )?antes|con cuanto tiempo) (tengo que|hay que|se puede|puedo|debo|teneis que)?\s*(cancelar|anular|avisar|cambiar)|\bsi (cancelo|anulo|no voy|no vengo|no aparezco|falto|no me presento|cancelara|cancelase)\b.*\b(cobr\w*|pag\w*|pasa algo|penaliz\w*)|\b(politica|condiciones) de (cancelacion|anulacion)\b|\bpenalizacion\b|\bse cobra (si|la cancelacion|por cancelar)/],
+  ['latePolicy', /\bsi (llego|llegara|llegase|me retraso|me retrasara|me retrasase)\b.*\b(mantene\w*|mantien\w*|mantendr\w*|guarda\w*|espera\w*|pierdo|perderia|pasa algo|atende\w*|atend\w*)\b|\bcuanto (tiempo|rato) (me )?(esperais|esperas|guardais)\b|\b(margen|tolerancia) (de|si llego|para llegar)\b/],
+];
+const infoTopics = t => INFO_TOPICS.filter(([, re]) => re.test(t)).map(([topic]) => topic);
+// A real booking request in the same message wins over an info question ("¿me das cita el sábado? ¿aceptáis bizum?")
+const BOOKING_REQUEST = /\b(me (das|dais|puedes dar|podeis dar|coges|cogeis|apuntas|apuntais|reservas|reservais) (cita|hora|hueco)?|quiero (cita|hora|reservar)|queria (cita|hora|pedir|reservar|coger)|cita para|hueco para|reservame|reservadme|apuntame|(?<!(falta|que|necesario|obligatorio) )pedir (cita|hora))\b/;
+
 // Wants to hear if a slot frees up: "avísame si queda algo antes", "si alguien cancela…", "lista de espera".
 // "Si alguien cancela" is about someone else, never a cancellation of hers.
 const WAITLIST = /\blista de espera\b|\bsi (alguien|alguna|algun cliente|alguna clienta|otra persona|otra clienta|os|te|se) (cancela|cancelan|anula|anulan|libera|liberan|falla|fallan|deja|quita)\b|\b(avis\w*|escrib\w*|llam\w*|di(me|dnos)|me (dices|decis)) (me |nos )?(si|cuando) (se )?(queda|quedara|libera|liberara|sale|saliera|hay|hubiera|cancela|cancelan|anula)\b|\bsi (se libera|queda libre|quedara libre|sale) (algun|algo|alguna|un|una|hueco|sitio)\b|\b(avis\w*) (me |nos )?(si|cuando) .*\b(hueco|sitio|libre|antes|cancel\w*)\b/;
@@ -176,10 +190,13 @@ const ANY_TIME = /\b(la que (tengais|tengas|haya) (libre|disponible)|cualquiera(
 function detectIntent(t, raw = '') {
   // "sí, …" / "Sí" (accent or comma) is a yes; "si no os importa…" (no accent) is a condition
   const conditional = CONDITIONAL_SI.test(t) && !/^\s*¡?s[ií]+\s*[,.!]/i.test(raw) && !/^\s*¡?sí/i.test(raw);
+  // salon info questions first: "¿puedo llevar al niño? no tengo con quién dejarlo" has "quién" (off-topic list)
+  if (infoTopics(t).length && !BOOKING_REQUEST.test(t) && !WAITLIST.test(t)) return 'info';
   if (NOT_BOOKING.test(t) && !EXPLICIT_BOOKING.test(t)) return null;
   t = t.replace(/\bcambio de (color|look|imagen|estilo)\b/g, 'tinte');
   t = t.replace(/\bpasar(me|nos|se|te)? (a|por) (pedir|coger|hacer|reservar|ver)\b/g, 'ir $2 $3'); // "pasarme a pedir cita" = visit, not move
   if (WAITLIST.test(t)) return 'waitlist';
+  if (infoTopics(t).length && !BOOKING_REQUEST.test(t)) return 'info';
   if (FAREWELL.test(t)) return 'confirm';
   if (UNSURE.test(t)) return 'reschedule'; // reply.js asks whether to move or cancel it
   if (UNDECIDED.test(t)) return 'undecided';
@@ -428,6 +445,8 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
     times: detectTimes(t, timeOfDay),
     noneOfThem: NONE_OF_THEM.test(t),
     unsure: UNSURE.test(t),
+    // info questions in the message: the first one is the topic of an 'info' intent; with a booking, all are answered too
+    infoTopics: infoTopics(t),
   };
   // A compliment that also asks for a day or time ("me encantó, ¿repetimos el viernes?") is a booking
   if (result.intent === 'thanks' && (result.date || result.time || EXPLICIT_BOOKING.test(t))) result.intent = 'book';
@@ -443,6 +462,7 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
     result.intent = 'confirm'; // "sí, mañana allí estoy": reply.js checks the day is really hers
   }
   result.normalizedText = t;
+  if (result.intent === 'info') result.topic = result.infoTopics[0];
   // "tengo una boda el sábado": the date is the event's, not the appointment's
   if (result.date && EVENT.test(t) && !result.service && !EXPLICIT_BOOKING.test(t) && !/\b(cita|hueco|para el|me (podeis|puedes) coger)\b/.test(t)) {
     result.eventDate = result.date; result.date = null;
@@ -476,7 +496,7 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
 
 // Short answers ("tarde", "9:45", "o el lunes") can only be understood knowing what the bot asked
 function applyContext(r, { lastQuestion = null, proposals = [], hasAppointment = false } = {}) {
-  const fixed = ['confirm', 'cancel', 'check', 'price', 'hours', 'late', 'thanks', 'preamble', 'undecided', 'waitlist', 'wait', 'keep', 'duration', 'event'];
+  const fixed = ['confirm', 'cancel', 'check', 'price', 'hours', 'late', 'thanks', 'preamble', 'undecided', 'waitlist', 'wait', 'keep', 'duration', 'event', 'info'];
   if (fixed.includes(r.intent)) return;
   const anything = r.time || r.date || r.timeOfDay;
   if (lastQuestion === 'proposal') {

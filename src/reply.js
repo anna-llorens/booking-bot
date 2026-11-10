@@ -29,6 +29,8 @@ const DEFAULT_BUSINESS = {
   address: null,         // answered when she asks where the salon is
   minNoticeMinutes: 120, // no appointment may start sooner than now + this
   maxDaysAhead: 60,      // the diary is open this many days ahead
+  // Answers the owner writes when setting up the salon. Empty ones are handed to the owner.
+  info: {},              // { walkIn, payment, parking, children, cancellationPolicy, latePolicy }
 };
 
 const WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -261,7 +263,7 @@ function computeReply(message, state = newConversation(), {
   const handover = reply => {
     if (BOOKING_QUESTIONS.includes(state.lastQuestion)) {
       const step = nextStep();
-      return { ...step, reply: `${reply} ${step.reply}`, handover: true };
+      return { ...step, reply: `${reply} Mientras, ${lowerFirst(step.reply)}`, handover: true };
     }
     state.lastQuestion = 'anythingElse'; state.proposals = [];
     return out(`${reply} ¿Puedo ayudarte en algo más?`, { handover: true });
@@ -290,7 +292,8 @@ function computeReply(message, state = newConversation(), {
   // Answer to "¿Puedo ayudarte en algo más?"
   if (state.lastQuestion === 'anythingElse') {
     state.lastQuestion = null;
-    if (/^(no|nop|nada|nada mas|no nada|no gracias|no es todo|eso es todo|ya esta|de momento no|por ahora no)( gracias| nada)?$/.test(t)) {
+    if (/^(no|nop|nope)?( nada)?( mas)?( gracias)?( (de momento|por ahora|nada mas))?$/.test(t) && t ||
+        /^(no )?(nada|eso es todo|es todo|ya esta|de momento no|por ahora no|nada mas|todo bien)( gracias)?$/.test(t)) {
       return out('¡Perfecto! Que tengas un buen día 😊');
     }
     // "genial, gracias" / "adiós": she is done
@@ -577,6 +580,7 @@ function computeReply(message, state = newConversation(), {
       return out('¡Perfecto! 😊');
 
     case 'duration': {
+      remember(u.details); // "¿cuánto dura la keratina?" → "vale": book keratina without asking again
       const source = u.details.length ? u : state.pending.details?.length ? state.pending : null;
       const minutes = source?.details?.reduce((n, d) => n + ((services.find(s => s.id === d.id) ?? d).duration ?? 0), 0);
       if (!minutes) return handover('Enseguida te decimos cuánto dura.');
@@ -601,6 +605,23 @@ function computeReply(message, state = newConversation(), {
         return out('¡Muy bien, gracias! 😊 ¿En qué te puedo ayudar? Te puedo dar cita, cambiarla o anularla.');
       }
       return out('¡Hola! 😊 ¿En qué te puedo ayudar? Te puedo dar cita, cambiarla o anularla.');
+
+    case 'info': {
+      // "¿aceptáis bizum?", "¿con cuánta antelación tengo que cancelar?": from settings.info, or the owner
+      const answers = (u.infoTopics ?? [u.topic]).map(k => business.info?.[k]).filter(Boolean);
+      if (!answers.length) return handover('Te contestaremos enseguida.');
+      const text = answers.join(' ');
+      if (BOOKING_QUESTIONS.includes(state.lastQuestion)) {
+        const step = nextStep();
+        return { ...step, reply: `${text} ${step.reply}` };
+      }
+      if (u.topic === 'walkIn' && !appt) {
+        state.lastQuestion = 'offerBooking'; state.proposals = [];
+        return out(`${text} ¿Quieres que te busque hueco?`);
+      }
+      state.lastQuestion = 'anythingElse'; state.proposals = [];
+      return out(`${text} ¿Puedo ayudarte en algo más?`);
+    }
 
     case 'undecided':
       // "luego te digo", "lo hablo con mi marido y te confirmo": nothing is booked, the offer is dropped
@@ -645,6 +666,13 @@ function computeReply(message, state = newConversation(), {
       const ask = useRecentServices();
       if (ask) return ask;
       const step = nextStep();
+      // "¿me das cita el sábado para tinte? ¿aceptáis bizum?": the booking goes on, the question is answered too
+      if (u.infoTopics?.length) {
+        const answers = u.infoTopics.map(k => business.info?.[k]).filter(Boolean);
+        const missing = u.infoTopics.some(k => !business.info?.[k]);
+        step.reply = `${answers.length ? answers.join(' ') + ' ' : ''}${step.reply}${missing ? ' Lo otro que me preguntas te lo contestamos enseguida.' : ''}`;
+        if (missing) step.handover = true;
+      }
       // "¿hacéis manicura semipermanente?": say yes before asking for the day
       if (u.service && u.service !== 'LAST' && /\b(haceis|hace|haces|ofreceis)\b/.test(t) && !u.date && !u.time) {
         step.reply = `¡Sí, hacemos ${serviceLabel(state.pending)}! 😊 ${step.reply}`;
@@ -703,7 +731,13 @@ function computeReply(message, state = newConversation(), {
         return out(`¡Hecho! Te apunto en la lista de espera${what} ${formatDate(entry.date, today)}. En cuanto abra la agenda, te escribo 😊`, { waitlist: entry });
       }
       // "sí" to "¿Quieres que te busque hueco?" / "¿Quieres pedir una?": start the booking
-      if (state.lastQuestion === 'offerBooking') { state.mode = 'book'; state.pending = {}; return nextStep(); }
+      // ...keeping the service she was asking about ("¿cuánto cuesta el tinte?" → "sí": tinte, don't ask again)
+      if (state.lastQuestion === 'offerBooking') {
+        state.mode = 'book';
+        if (!state.pending.service) state.pending = {};
+        const ask = useRecentServices();
+        return ask ?? nextStep();
+      }
       if (state.lastQuestion === 'proposal' && state.proposals.length === 1) return book(state.proposals[0]);
       if (state.lastQuestion === 'proposal') return out(`¿Cuál prefieres? ${listTimes(state.proposals)}`);
       if (GOODBYE.test(t)) return out('¡Hasta pronto! 😊');

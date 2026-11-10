@@ -78,12 +78,17 @@ All tables (except `businesses`) have `business_id`; every query filters by it. 
   "slotMinutes": 30,            // proposals start every 30 minutes
   "maxProposals": 2,            // times offered at once
   "capacity": 1,                // appointments that may overlap (chairs / staff)
+  "closedDates": ["2026-12-08"],                                          // public holidays
+  "closedRanges": [{ "from": "2027-08-09", "to": "2027-08-22", "reason": "vacaciones" }],
+  "minNoticeMinutes": 120,      // nothing starts sooner than now + 2 h
+  "maxDaysAhead": 60,           // the diary is open 60 days ahead
   "address": "Carrer Major 12, Barcelona",
+  "info": { "payment": "…", "parking": "…" },   // answers the owner writes; empty → the owner answers
   "simulatedBusy": false        // demo only: also block some fake busy slots
 }
 ```
 
-Defaults live in `DEFAULT_BUSINESS` in `src/reply.js`.
+Defaults live in `DEFAULT_BUSINESS` in `src/reply.js`; the full list is in the [README](../README.md#salon-settings).
 
 ### Identity
 
@@ -103,7 +108,9 @@ Everything the bot needs from storage is in [src/store/README.md](../src/store/R
 
 `bot.makeIsFree()` builds `isFree(date, start, duration)` from the salon's booked appointments: a slot is free if fewer than `capacity` appointments overlap it. The customer's own appointment is ignored, so moving it can reuse its slot. `reply.js` combines that with opening hours, closed days and "not in the past" to propose times.
 
-Not modelled yet: staff and which staff member does which service, breaks, holidays, different hours per day. They would go into `settings` (or new tables) and into `makeIsFree()`, without touching `reply.js`'s logic.
+`closedReason()` in `reply.js` tells whether a day is closed (weekly day off, `closedDates`, `closedRanges`); `freeSlots()`, `makeIsFree()` and the test seeding all use it. `minNoticeMinutes` and `maxDaysAhead` are applied in `freeSlots()` with the `now` option, so `reply.js` stays pure.
+
+Not modelled yet: staff and which staff member does which service, breaks, different hours per day. They would go into `settings` (or new tables) and into `makeIsFree()`, without touching `reply.js`'s logic.
 
 ## Conversations
 

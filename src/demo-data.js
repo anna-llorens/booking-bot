@@ -21,6 +21,14 @@ const DEMO_BUSINESSES = [
       address: 'Carrer Major 12, Barcelona',
       closedDates: ['2026-12-08', '2026-12-25', '2027-01-01', '2027-01-06'],
       closedRanges: [{ from: '2027-08-09', to: '2027-08-22', reason: 'vacaciones' }],
+      info: {
+        walkIn: 'Trabajamos con cita previa, pero si tenemos un hueco libre te atendemos sin problema 😊',
+        payment: 'Puedes pagar en efectivo, con tarjeta o con Bizum.',
+        parking: 'Hay un parking público a 50 metros (Carrer Major 30) y zona azul en la misma calle.',
+        children: '¡Claro! Los peques pueden venir contigo; tenemos un rincón con cuentos para ellos.',
+        cancellationPolicy: 'Te pedimos que avises con al menos 24 horas. No cobramos nada por cancelar, pero así podemos darle el hueco a otra clienta.',
+        latePolicy: 'Te esperamos hasta 15 minutos. Si llegas más tarde intentamos atenderte, pero puede que tengamos que acortar el servicio o cambiarte la cita.',
+      },
       simulatedBusy: true, // also block the simulated busy slots, so the demo calendar isn't empty
     },
     services: withPrices(SAMPLE_CATALOG),
@@ -33,14 +41,31 @@ const DEMO_BUSINESSES = [
       address: 'Avinguda Diagonal 200, Barcelona',
       closedDates: ['2026-12-08', { date: '2026-12-26', reason: 'Sant Esteve' }],
       closedRanges: [{ from: '2026-12-28', to: '2027-01-06', reason: 'vacaciones de Navidad' }],
+      info: {
+        walkIn: 'Solo atendemos con cita previa.',
+        payment: 'Aceptamos tarjeta y efectivo (no Bizum).',
+        children: 'Preferimos que vengas sin niños, por seguridad en las cabinas.',
+        cancellationPolicy: 'Avisa con 24 horas. Si cancelas el mismo día, cobramos el 50 % del servicio.',
+        latePolicy: 'Tenemos un margen de 10 minutos; a partir de ahí puede que tengamos que cambiarte la cita.',
+        // parking: not filled in, so parking questions go to the owner
+      },
       simulatedBusy: true,
     },
     services: withPrices(SAMPLE_CATALOG.filter(s => BEAUTY_CATEGORIES.includes(s.category))),
   },
 ];
 
+// Creates the demo salons on first start. On later starts it only refreshes the demo salons' settings and
+// catalog (so new settings such as holidays reach an existing database); real salons are never touched.
 async function seedDemoData(store) {
-  if ((await store.listBusinesses()).length) return false;
+  if ((await store.listBusinesses()).length) {
+    for (const b of DEMO_BUSINESSES) {
+      if (!(await store.getBusiness(b.id))) continue;
+      await store.saveBusiness(b);
+      await store.saveServices(b.id, b.services);
+    }
+    return false;
+  }
   for (const b of DEMO_BUSINESSES) {
     await store.saveBusiness(b);
     await store.saveServices(b.id, b.services);

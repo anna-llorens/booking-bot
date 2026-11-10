@@ -60,7 +60,7 @@ const cases = {
     t = chat(['quería saber si hacéis manicura semipermanente', 'Y cuánto cuesta más o menos?', 'Genial gracias']);
     assert.match(t[0].reply, /^¡Sí, hacemos manicura semipermanente!/);
     // a price question in the middle of a booking keeps the booking going
-    assert.match(t[1].reply, /precio de manicura semipermanente\. Para manicura semipermanente .* tengo/);
+    assert.match(t[1].reply, /precio de manicura semipermanente\. Mientras, para manicura semipermanente .* tengo/);
     t = chat(['cuanto cuesta el tinte?', 'Genial gracias']);
     assert.match(t[1].reply, /buen día/);
   },
@@ -148,6 +148,17 @@ const cases = {
     r = respond('mechas el 15 de febrero', newConversation(), { today: now });
     r = respond('no', r.state, { today: now });
     assert.equal(r.state.waitlist.length, 0);
+  },
+  'after a price or duration answer, "sí" books that service without asking it again': () => {
+    const { services } = require('../src/demo-data').DEMO_BUSINESSES[0]; // catalog with prices
+    const say = msgs => { let st = newConversation(); return msgs.map(m => { const r = respond(m, st, { today, services }); st = r.state; return r; }); };
+    let t = say(['cuanto cuesta el tinte?', 'si']);
+    assert.equal(t[1].state.pending.service, 'tinte');
+    assert.equal(t[1].state.lastQuestion, 'proposal');
+    t = say(['cuánto dura la keratina?', 'vale']);
+    assert.equal(t[1].state.pending.service, 'queratina');
+    t = say(['cuanto cuesta el tinte?', 'y las mechas?', 'si']);
+    assert.match(t[2].reply, /¿Para tinte, mechas o las dos cosas\?/);
   },
   'does not mutate the state it receives': () => {
     const s = newConversation();
