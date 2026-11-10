@@ -392,6 +392,7 @@ function computeReply(message, state = newConversation(), {
 
   // "perfecto pues el viernes" right after booking it: she is just confirming the same day
   if (appt && !state.lastQuestion && u.date && toISODate(u.date) === appt.date && !u.time && !u.service &&
+      !/\b(cambi\w*|pasa\w*|mueve\w*|mover\w*|aplaz\w*|adelant\w*|retras\w*)\b/.test(t) &&
       ['book', 'reschedule', 'confirm'].includes(u.intent)) {
     topic = 'confirm';
     return out(`¡Genial! Te esperamos ${formatDate(appt.date, today)} a las ${appt.time} 😊`);
@@ -469,6 +470,9 @@ function computeReply(message, state = newConversation(), {
     const recent = state.recentServices ?? [];
     const p = state.pending;
     if (u.service || p.service || !recent.length) return null;
+    // only right after talking about them ("¿cuánto cuesta el tinte?" → "vale, dame cita"), not hours later
+    const justAsked = ['price', 'duration', 'services'].includes(previousTopic) || (state.lastQuestion === 'service' && previousTopic === 'book');
+    if (!justAsked) return null;
     const both = /\b(las dos( cosas)?|las 2( cosas)?|ambas( cosas)?|todo eso|todo|las tres( cosas)?)\b/.test(t);
     if (both || recent.length === 1) {
       p.details = [...recent];
@@ -907,6 +911,12 @@ function computeReply(message, state = newConversation(), {
       return out('¡Muchísimas gracias! Nos alegra mucho que te gustara 😊');
 
     case 'book': {
+      // "quiero cita (para el 25)" as a new request: a new booking from scratch. Her existing appointments are
+      // closed: nothing is inherited from them (or from an earlier, abandoned booking), so she is asked the service.
+      const newRequest = /\b(quiero|queria|quisiera|necesito|me (das|dais|puedes dar|podeis dar)|pedir|coger|reservar) (una |otra |nueva )?(cita|hora|hueco)\b|\b(otra|nueva) cita\b/.test(t);
+      if (newRequest && !u.service && (state.mode === 'reschedule' || !BOOKING_QUESTIONS.includes(state.lastQuestion))) {
+        state.mode = 'book'; state.pending = {}; state.proposals = []; state.offered = null;
+      }
       if (state.mode === 'reschedule' && !u.service) { merge(); return nextStep(); }
       if (!state.lastQuestion || state.lastQuestion === 'anythingElse') state.mode = 'book';
       merge();
