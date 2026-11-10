@@ -404,6 +404,14 @@ function detectTimes(t, timeOfDay) {
   return [...new Set(times)];
 }
 
+// "martes o miércoles", "el jueves o el viernes": every day she offers, in order
+function detectDates(t, today) {
+  const pieces = t.split(/ o (?=(?:el |la |para el |\d|lunes|martes|miercoles|jueves|viernes|sabado|domingo|manana|pasado))/).filter(Boolean);
+  if (pieces.length < 2) return [];
+  const dates = pieces.map(p => detectDate(p, today)).filter(Boolean);
+  return dates.filter((d, i) => dates.findIndex(x => x.getTime() === d.getTime()) === i);
+}
+
 function detectTime(t, timeOfDay) {
   // "ninguna de las dos", "las dos cosas", "cualquiera de las tres": counting, not a time
   t = t.replace(/^de (las|los) (dos|tres)\b|\b(ninguna|ninguno|cualquiera|alguna|una|uno) de (las|los) (dos|tres)\b|\b(las|los) (dos|tres|2|3) (cosas|opciones|horas|citas|servicios)\b/g, ' ');
@@ -486,6 +494,7 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
     anyTime: ANY_TIME.test(t),
     sameTime: SAME_TIME.test(t),
     times: detectTimes(t, timeOfDay),
+    dates: detectDates(t, today),
     noneOfThem: NONE_OF_THEM.test(t),
     unsure: UNSURE.test(t),
     declined: DECLINE.test(t) && !/^otro (dia|rato|momento)$/.test(t),

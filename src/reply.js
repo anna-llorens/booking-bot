@@ -217,6 +217,7 @@ function serviceExamples(services, max = 4) {
 // (the owner still gets them and they are still logged) until she says something it understands.
 const MAX_MISUNDERSTOOD = 2;
 const STALE_OFFER_MINUTES = 180; // an offer left unanswered this long is dropped
+const MAX_LISTED_TIMES = 6;       // when she asks for more times, list up to this many
 
 function respond(message, state = newConversation(), options = {}) {
   const previousReply = state?.lastReply ?? null;
@@ -345,6 +346,10 @@ function computeReply(message, state = newConversation(), {
   const noneOfThem = u.noneOfThem || (state.lastQuestion === 'proposal' && /^(no|nop|tampoco|no me va|no me viene|no me cuadra|no puedo a esa hora)$/.test(t));
   if (noneOfThem && state.lastQuestion === 'proposal' && topic !== 'reschedule') topic = 'reschedule';
 
+  // "¿tienes más horarios?", "¿hay más huecos?", "¿alguna hora más?" while times are on offer: more times that day
+  if (state.lastQuestion === 'proposal' && state.pending.date && !u.date && !u.time && !u.service &&
+      /\b((mas|otras?|otros) (horas|horarios|huecos|opciones)|(tienes|teneis|hay|tendrias|tendriais) (algo )?mas\b|alguna (hora )?mas|que mas (tienes|teneis|hay))\b/.test(t)) topic = 'moreTimes';
+
   // "tinte" right after "¿De qué servicio quieres saber el precio?": its price
   if (state.lastQuestion === 'priceService' && u.service && !u.date && !u.time && [null, 'book', 'price'].includes(u.intent)) topic = 'price';
 
@@ -398,6 +403,9 @@ function computeReply(message, state = newConversation(), {
       p.details = [...p.details, ...extra];
       p.duration = p.details.reduce((n, d) => n + (d.duration ?? 0), 0) || null;
     } else if (u.service) { p.service = u.service; p.details = u.details; p.duration = u.totalDuration; }
+    // "martes o miércoles": book on the first, also show the second
+    if (u.dates?.length > 1 && !u.time) p.altDate = toISODate(u.dates[1]);
+    else if (u.date) delete p.altDate;
     if (u.excludeDate) {
       // "mañana no puedo": that day is out, look from the next one
       const out = toISODate(u.excludeDate);
@@ -413,13 +421,20 @@ function computeReply(message, state = newConversation(), {
         const ref = fromISODate(p.date);
         const monday = new Date(ref); monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7));
         const same = new Date(monday); same.setDate(monday.getDate() + ((u.date.getDay() + 6) % 7));
-        if (same >= fromISODate(toISODate(today))) newDate = toISODate(same);
+        // ...but never back to the very day being discussed ("martes" said on a Tuesday means next Tuesday)
+        if (same >= fromISODate(toISODate(today)) && toISODate(same) !== p.date) newDate = toISODate(same);
       }
       if (newDate !== p.date && !u.time) delete p.time; // new day: the old time no longer applies
       p.date = newDate;
     }
     if (u.timeOfDay) { p.timeOfDay = u.timeOfDay; if (!u.time) delete p.time; }
     if (u.time) p.time = u.time;
+    // an exact time outside a time of day said earlier beats it ("por la tarde" … "el miércoles a las 10");
+    // inside it, both stay ("a mediodía" … "sobre la 1")
+    if (u.time && !u.timeOfDay && p.timeOfDay) {
+      const [from, to] = TIME_OF_DAY_RANGES[p.timeOfDay] ?? [0, 24 * 60];
+      if (toMinutes(u.time) < from || toMinutes(u.time) >= to) delete p.timeOfDay;
+    }
     if (u.anyDay && !u.date) p.anyDay = true;
     if ((u.anyTime || (u.anyDay && state.lastQuestion === 'proposal')) && !u.time) { p.anyTime = true; delete p.time; }
     if (u.fromDate) p.fromDate = toISODate(u.fromDate);
@@ -508,8 +523,16 @@ function computeReply(message, state = newConversation(), {
     }
     const slots = slotsOn(p.date);
     state.proposals = pickProposals(slots, p.time, business.maxProposals);
+    // the same times she has already seen for that day ("para el martes por la tarde" after 15:30 / 18:30):
+    // show more of that day instead of repeating them
+    const seen = state.offered?.date === p.date ? state.offered.times : [];
+    let more = false;
+    if (!p.time && (u.timeOfDay || u.date) && seen.length && state.proposals.every(h => seen.includes(h)) && slots.length > state.proposals.length) {
+      state.proposals = pickProposals(slots, null, Math.min(slots.length, MAX_LISTED_TIMES));
+      more = true;
+    }
     state.lastQuestion = 'proposal';
-    state.offered = { date: p.date, times: [...(state.offered?.date === p.date ? state.offered.times : []), ...state.proposals] };
+    state.offered = { date: p.date, times: [...new Set([...seen, ...state.proposals])] };
     const when = formatDate(p.date, today);
     const lead = note ? `${note} ` : '';
     // "a la hora que os venga bien": pick one and ask
@@ -525,8 +548,30 @@ function computeReply(message, state = newConversation(), {
     if (chosenByBot) {
       return out(`${lead}Lo primero que tengo para ${serviceLabel(p)} es ${when}: ${listTimes(state.proposals)}. ${question.replace('?', '')}, o prefieres otro día?`);
     }
-    const intro = p.time ? `A las ${p.time} no me queda hueco ${when}. Tengo` : `Para ${serviceLabel(p)} ${when} tengo`;
-    return out(`${lead}${intro}: ${listTimes(state.proposals)}. ${question}`);
+    const intro = p.time ? `A las ${p.time} no me queda hueco ${when}. Tengo` : more ? `${when[0].toUpperCase()}${when.slice(1)}${p.timeOfDay ? { morning: ' por la mañana', midday: ' a mediodía', afternoon: ' por la tarde' }[p.timeOfDay] : ''} tengo todo esto` : `Para ${serviceLabel(p)} ${when} tengo`;
+    // "martes o miércoles": the other day too (she can say "el miércoles a las 10")
+    let also = '';
+    if (p.altDate && p.altDate !== p.date) {
+      const alt = pickProposals(freeSlots(p.altDate, { duration, timeOfDay: p.timeOfDay }, now, business, isFree), null, business.maxProposals);
+      also = alt.length ? ` Y ${formatDate(p.altDate, today)}, ${alt.join(' o ')}.` : ` ${formatDate(p.altDate, today)[0].toUpperCase()}${formatDate(p.altDate, today).slice(1)} no me queda hueco.`;
+    }
+    return out(`${lead}${intro}: ${listTimes(state.proposals)}.${also} ${question}`);
+  };
+
+  // "¿tienes más horas?", "¿hay más huecos?": every free time that day (not just two)
+  const moreTimes = () => {
+    const p = state.pending;
+    const duration = p.duration || 30;
+    const seen = state.offered?.date === p.date ? state.offered.times : state.proposals;
+    const all = freeSlots(p.date, { duration, timeOfDay: p.timeOfDay }, now, business, isFree);
+    const rest = all.filter(m => !seen.includes(toHHMM(m)));
+    const when = formatDate(p.date, today);
+    if (!rest.length) {
+      return out(`${when[0].toUpperCase()}${when.slice(1)} no tengo más horas que esas 😔 ¿Te miro otro día?`);
+    }
+    state.proposals = pickProposals(all, null, Math.min(all.length, MAX_LISTED_TIMES));
+    state.offered = { date: p.date, times: [...new Set([...seen, ...state.proposals])] };
+    return out(`Claro 😊 ${when} tengo: ${listTimes(state.proposals)}. ¿Cuál te va mejor?`);
   };
 
   const cancelAppointment = () => {
@@ -678,6 +723,9 @@ function computeReply(message, state = newConversation(), {
   }
 
   switch (topic) {
+    case 'moreTimes':
+      return moreTimes();
+
     case 'wait':
       // "espera", "voy a mirar una cosa": nothing changes, whatever was on offer is still on offer
       return out('¡Claro, tómate tu tiempo! 😊');
