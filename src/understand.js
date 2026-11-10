@@ -77,6 +77,8 @@ const INTENTS = [
   // "¿me lo mandas por escrito?": resend her appointment
   ['check', /\b(me )?(lo|la) (mandas|mandais|envias|enviais|pasas|pasais|escribes|escribis|puedes mandar|puedes enviar|podeis mandar|podeis enviar)\b.*\b(por escrito|por aqui|por whatsapp|por mensaje|olvide|recordar)\b|\bpor escrito\b|\bpara que no se me olvide\b/],
   ['check', /^(hola |buenas |oye )?(tengo|tenia) (una )?cita (ahora|ahora mismo|en un rato|dentro de un rato|esta (tarde|manana)|hoy)\b(?!.*\b(llegar|llego|llegare|retraso|tarde)\b)|\b(tengo|tenia) (una )?(cita|hora) (apuntada|reservada|cogida|pedida)\b|\bcreo que (tengo|tenia) (cita|hora)\b/],
+  // "mis citas", "ver mis citas", "¿qué citas tengo?"
+  ['check', /^(ver |ensename |dime |cuales son |cuales son |consultar )?(mis|las mis) (citas|reservas)\b|\b(que|cuantas) (citas|reservas) tengo\b|\bmis (citas|reservas)\b/],
   ['check', /^(y )?(tengo|tenia|tendria) (alguna |una )?(citas?|horas?|algo (apuntado|reservado))( (para )?(hoy|manana|pasado manana|esta semana|el \w+( \d{1,2})?))?$/],
   ['check', /\b(a que hora (tengo|era|voy|tenia|tiene)|cuando (tenia|tengo|era)|que dia (tenia|tengo|era)|tenia (cita|hora)|me recuerdas|me podeis recordar|tengo (cita|hora) .*verdad|tengo algo apuntado|sigue en pie|si tengo (cita|hora|reservad\w*)|no recuerdo|me lo podeis mirar|cuando tengo|habiamos quedado|me disteis|me dieron|sigo teniendo|sigue reservad\w*|me confirmais si|si tengo cita)\b/],
   ['hours', /\b(horarios?|a que hora (abr|cerr)\w*|hasta que hora|abiert[oa]s?|cerrad[oa]s?|abr(is|en|e|iran|ireis)|cerrais|trabaj(ais|an)|(estais|seguis|esta) trabajando|descans\w*|todavia estais|seguis abiertos|estais ahi|a que hora (empez|termin|acab)\w*)\b/],
@@ -572,7 +574,10 @@ function applyContext(r, { lastQuestion = null, proposals = [], hasAppointment =
     r.intent = 'choose';
   } else if (lastQuestion === 'service' && r.service) {
     r.intent = 'book';
-  } else if (hasAppointment && anything && (r.intent === null || r.intent === 'book')) {
+  } else if (hasAppointment && anything && (r.intent === null || r.intent === 'book') && !r.service &&
+             !/\b(quiero|queria|quisiera|necesito|otra cita|nueva cita|otra hora|tambien)\b/.test(r.normalizedText ?? '')) {
+    // she has an appointment and only says a day/time: she means moving it. With a service or "quiero…" it is a
+    // new booking ("quiero manicura el miércoles 18" while she already has a haircut)
     r.intent = 'reschedule';
   }
   r.understood = r.intent !== null;

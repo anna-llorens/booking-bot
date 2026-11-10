@@ -28,6 +28,7 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 |---|---|
 | `listAppointments(businessId, { from?, to?, status = 'booked' })` | `[{ id, customerId, service, name, details, date, time, duration, status, … }]` by date and time |
 | `getUpcomingAppointment(businessId, customerId, fromDate)` | her next booked appointment from that day, or `null` |
+| `listCustomerAppointments(businessId, customerId, fromDate)` | all her booked appointments from that day, soonest first |
 | `getLastAppointment(businessId, customerId, beforeDate)` | her most recent past appointment (for "lo de siempre"), or `null` |
 | `createAppointment({ businessId, customerId, service, name, details, date, time, duration })` | the appointment |
 | `updateAppointment(businessId, id, patch)` | the appointment, or `null` |

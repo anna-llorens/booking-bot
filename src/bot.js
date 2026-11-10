@@ -54,14 +54,17 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
   const idleHours = saved ? (Date.now() - new Date(saved.updatedAt)) / 3.6e6 : Infinity;
   let state = saved && idleHours < CONVERSATION_TIMEOUT_HOURS ? saved.state : newConversation();
 
-  // The store is the source of truth for appointments, not the conversation
-  const upcoming = await store.getUpcomingAppointment(businessId, customer.id, today);
-  state = { ...state, appointment: toStateAppointment(upcoming) };
+  // The store is the source of truth for appointments, not the conversation. She may have several:
+  // the conversation keeps which one it is talking about (focusId); otherwise the soonest.
+  const mine = await store.listCustomerAppointments(businessId, customer.id, today);
+  const upcoming = mine.find(a => a.id === state.focusId) ?? mine[0] ?? null;
+  state = { ...state, appointment: toStateAppointment(upcoming), appointments: mine.map(toStateAppointment) };
   const last = await store.getLastAppointment(businessId, customer.id, today);
 
   // load the calendar as far as the diary is open
   const until = new Date(now); until.setDate(until.getDate() + (business.settings.maxDaysAhead ?? DEFAULT_BUSINESS.maxDaysAhead));
   const calendar = await store.listAppointments(businessId, { from: today, to: toISODate(until) });
+  // her focused appointment's own slot counts as free, so moving it can reuse it
   const isFree = makeIsFree(calendar, business.settings, upcoming?.id);
 
   const result = respond(text, state, {
@@ -73,28 +76,32 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
     usual: last?.details?.length ? last.details : null,
   });
 
-  // Persist the appointment change, if any
-  const before = state.appointment;
+  // Persist what changed. Each appointment is compared with itself (by id): talking about a different one of
+  // her appointments ("la del corte") is not a change.
   const after = result.state.appointment;
-  let appointment = upcoming;
+  const stored = after?.id ? mine.find(a => a.id === after.id) : null;
+  let appointment = stored ?? null;
   let conflict = false;
-  if (after && (!before || after.date !== before.date || after.time !== before.time || after.id !== before.id)) {
+  const moved = after && (!after.id || !stored || after.date !== stored.date || after.time !== stored.time || after.service !== stored.service);
+  if (moved) {
     // Someone else may have taken the slot since the bot proposed it: check again against a fresh calendar
     const fresh = await store.listAppointments(businessId, { from: after.date, to: after.date });
-    if (!makeIsFree(fresh, { ...business.settings, simulatedBusy: false }, before?.id)(after.date, toMinutes(after.time), after.duration)) {
+    if (!makeIsFree(fresh, { ...business.settings, simulatedBusy: false }, after.id)(after.date, toMinutes(after.time), after.duration)) {
       conflict = true;
-    } else if (after.id && before && after.id === before.id) {
-      appointment = await store.updateAppointment(businessId, before.id, { date: after.date, time: after.time, service: after.service, name: after.name, details: after.details, duration: after.duration, notes: after.notes ?? null });
+    } else if (stored) {
+      appointment = await store.updateAppointment(businessId, stored.id, { date: after.date, time: after.time, service: after.service, name: after.name, details: after.details, duration: after.duration, notes: after.notes ?? null });
     } else {
-      appointment = await store.createAppointment({ businessId, customerId: customer.id, ...after });
+      appointment = await store.createAppointment({ businessId, customerId: customer.id, ...after, id: undefined });
     }
-  } else if (before && !after) {
-    await store.cancelAppointment(businessId, before.id);
-    appointment = null;
+  }
+  if (result.state.cancelledId && mine.some(a => a.id === result.state.cancelledId)) {
+    await store.cancelAppointment(businessId, result.state.cancelledId);
+    if (appointment?.id === result.state.cancelledId) appointment = null;
   }
 
   let reply = result.reply;
-  let newState = { ...result.state, appointment: toStateAppointment(appointment) };
+  const nowMine = await store.listCustomerAppointments(businessId, customer.id, today);
+  let newState = { ...result.state, cancelledId: null, appointment: toStateAppointment(appointment), appointments: nowMine.map(toStateAppointment), focusId: appointment?.id ?? null };
   if (conflict) {
     reply = 'Vaya, esa hora se acaba de ocupar 😔 ¿Te busco otra? Dime qué día te va bien.';
     newState = { ...newState, lastQuestion: 'day', proposals: [], pending: { ...result.state.pending, ...after, date: undefined, time: undefined } };
@@ -110,7 +117,7 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
     await store.addHandover({ businessId, customerId: customer.id, message: text, reason });
   }
 
-  return { ...result, reply, silent: result.silent && !conflict, state: newState, appointment, customer, business: { id: business.id, name: business.name } };
+  return { ...result, reply, silent: result.silent && !conflict, state: newState, appointment, appointments: nowMine, customer, business: { id: business.id, name: business.name } };
 }
 
 // Starts a new conversation for this customer (her appointments are kept)

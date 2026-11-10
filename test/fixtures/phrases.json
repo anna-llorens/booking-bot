@@ -751,6 +751,10 @@
     {"text":"estas bien","expected":{"intent":"greeting"},"source":"test-ui"},
     {"text":"¿cómo andas?","expected":{"intent":"greeting"},"source":"generated"},
     {"text":"podria ser martes o miercoles","expected":{"date":"2026-11-17"},"source":"test-ui","note":"first day; the second is in 'dates'"},
-    {"text":"el jueves o el viernes","expected":{"date":"2026-11-12"},"source":"generated"}
+    {"text":"el jueves o el viernes","expected":{"date":"2026-11-12"},"source":"generated"},
+    {"text":"mis citas","expected":{"intent":"check"},"source":"test-ui"},
+    {"text":"¿qué citas tengo?","expected":{"intent":"check"},"source":"generated"},
+    {"text":"quiero manicura el miércoles 18","expected":{"intent":"book","service":"manicura","date":"2026-11-18"},"context":{"hasAppointment":true},"source":"test-ui","note":"a new service while she has another appointment is a new booking, not a change"},
+    {"text":"el jueves a las 12","expected":{"intent":"reschedule"},"context":{"hasAppointment":true},"source":"generated","note":"only a day/time with an appointment: moving it"}
   ]
 }

@@ -350,6 +350,10 @@ function computeReply(message, state = newConversation(), {
   if (state.lastQuestion === 'proposal' && state.pending.date && !u.date && !u.time && !u.service &&
       /\b((mas|otras?|otros) (horas|horarios|huecos|opciones)|(tienes|teneis|hay|tendrias|tendriais) (algo )?mas\b|alguna (hora )?mas|que mas (tienes|teneis|hay))\b/.test(t)) topic = 'moreTimes';
 
+  // "y la de la manicura?" right after telling her appointments: that one
+  if (previousTopic === 'check' && (u.service || u.date) && !u.time && [null, 'book', 'reschedule'].includes(u.intent) &&
+      /^(y )?(la|el|lo|las|los) (de|del)\b|^y\b/.test(t)) topic = 'check';
+
   // "tinte" right after "¿De qué servicio quieres saber el precio?": its price
   if (state.lastQuestion === 'priceService' && u.service && !u.date && !u.time && [null, 'book', 'price'].includes(u.intent)) topic = 'price';
 
@@ -363,7 +367,15 @@ function computeReply(message, state = newConversation(), {
   if (previousTopic === 'hours' && followUp && !u.service && [null, 'book', 'hours'].includes(u.intent)) topic = 'hours';
   if (previousTopic === 'price' && followUp && [null, 'book', 'price'].includes(u.intent)) topic = 'price';
 
-  const appt = state.appointment;
+  // She may have several appointments; `appt` is the one being talked about
+  let appt = state.appointment;
+  const appts = state.appointments?.length ? state.appointments : (appt ? [appt] : []);
+  const focusOn = a => { appt = a; state.appointment = a; state.focusId = a?.id ?? null; };
+  // Which of her appointments she means: by service ("la de la manicura") and/or day ("la del viernes")
+  const matchAppointments = (byDate = true) => appts.filter(a =>
+    (!u.service || a.service === u.service || (a.details ?? []).some(d => d.group === u.service || d.id === u.details[0]?.id)) &&
+    (!byDate || !u.date || a.date === toISODate(u.date)));
+  const listAppointments = list => list.map((a, i) => `${list.length > 1 ? `${i + 1}) ` : ''}${apptText(a)}`).join(list.length > 2 ? '; ' : list.length === 2 ? ' y ' : '');
   const apptText = a => `${a.name.toLowerCase()}, ${formatDate(a.date, today)} a las ${a.time}`;
 
   // "no sé si podré ir mañana": don't move it to that day, ask what she wants
@@ -393,6 +405,7 @@ function computeReply(message, state = newConversation(), {
   const merge = () => {
     const p = state.pending;
     const previousTime = p.time;
+    const previousDate = p.date;
     addNote(noteFrom(message, t)); // "corte, solo las puntas", "para mi hija"…
     if (u.service === 'LAST' && usual?.length) {
       // "lo de siempre": her last service, from her history
@@ -405,7 +418,8 @@ function computeReply(message, state = newConversation(), {
     } else if (u.service) { p.service = u.service; p.details = u.details; p.duration = u.totalDuration; }
     // "martes o miércoles": book on the first, also show the second
     if (u.dates?.length > 1 && !u.time) p.altDate = toISODate(u.dates[1]);
-    else if (u.date) delete p.altDate;
+    // a different day drops the other day offered; repeating the same one ("para el martes por la tarde") keeps it
+    else if (u.date && p.date !== previousDate && p.date !== p.altDate) delete p.altDate;
     if (u.excludeDate) {
       // "mañana no puedo": that day is out, look from the next one
       const out = toISODate(u.excludeDate);
@@ -416,13 +430,18 @@ function computeReply(message, state = newConversation(), {
     if (u.date) {
       let newDate = toISODate(u.date);
       // "quería decir el jueves" while talking about Wed 18: the Thursday of that same week (19), not the 12th
+      const withoutTimes = t.replace(/\b\d{1,2}[:.h]\d{2}\b/g, ' ').replace(/\b(a|sobre|hacia|de|para|por) las \d{1,2}\b/g, ' ');
       if (p.date && /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(t) &&
-          !/\b\d{1,2}\b|que viene|proxim|siguiente|semana/.test(t)) {
+          !/\b\d{1,2}\b|que viene|proxim|siguiente|semana/.test(withoutTimes)) {
         const ref = fromISODate(p.date);
         const monday = new Date(ref); monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7));
         const same = new Date(monday); same.setDate(monday.getDate() + ((u.date.getDay() + 6) % 7));
-        // ...but never back to the very day being discussed ("martes" said on a Tuesday means next Tuesday)
-        if (same >= fromISODate(toISODate(today)) && toISODate(same) !== p.date) newDate = toISODate(same);
+        // naming the weekday of the day being discussed ("el miércoles a las 17:30" while on Wed 18) keeps that day;
+        // but "martes" said on a Tuesday while discussing today means next Tuesday
+        // the other day she was offered ("…y mañana, 09:30 o 19:30" → "el miércoles a las 9:30")
+        if (p.altDate && fromISODate(p.altDate).getDay() === u.date.getDay()) newDate = p.altDate;
+        else if (toISODate(same) === p.date && p.date !== toISODate(today)) newDate = p.date;
+        else if (same >= fromISODate(toISODate(today)) && toISODate(same) !== p.date) newDate = toISODate(same);
       }
       if (newDate !== p.date && !u.time) delete p.time; // new day: the old time no longer applies
       p.date = newDate;
@@ -575,6 +594,7 @@ function computeReply(message, state = newConversation(), {
   };
 
   const cancelAppointment = () => {
+    state.cancelledId = appt?.id ?? null; // bot.js cancels exactly this one
     state.appointment = null; state.pending = {}; state.mode = 'book'; state.lastQuestion = null; state.proposals = [];
     return out(`Hecho, he anulado tu cita (${apptText(appt)}). ¡Esperamos verte pronto!`);
   };
@@ -720,6 +740,30 @@ function computeReply(message, state = newConversation(), {
         return nextStep();
       }
     }
+  }
+
+  // Answer to "Tienes 2 citas: … ¿Cuál quieres cambiar / anular?"
+  if (state.lastQuestion === 'whichAppointment') {
+    const byOption = u.option ? [appts[u.option === -1 ? appts.length - 1 : u.option - 1]].filter(Boolean) : [];
+    const chosen = byOption.length ? byOption : matchAppointments(true);
+    if (chosen.length === 1) {
+      focusOn(chosen[0]);
+      const action = state.whichFor; state.whichFor = null;
+      if (action === 'cancel') {
+        state.lastQuestion = 'confirmCancel';
+        return out(`Vale. ¿Seguro que quieres anular ${apptText(appt)}? Si prefieres, te la cambio a otro día.`);
+      }
+      state.mode = 'reschedule';
+      state.pending = { service: appt.service, details: appt.details ?? [{ name: appt.name }], duration: appt.duration };
+      state.lastQuestion = null;
+      merge();
+      const step = nextStep();
+      return { ...step, reply: `Vale, ${apptText(appt)}. ${step.reply}` };
+    }
+    if (!['cancel', 'reschedule', 'undecided', 'wait', 'greeting', 'thanks'].includes(u.intent)) {
+      return out(`¿Cuál de las dos? ${listAppointments(appts)}`);
+    }
+    state.lastQuestion = null;
   }
 
   switch (topic) {
@@ -902,6 +946,10 @@ function computeReply(message, state = newConversation(), {
         if (open.includes(toMinutes(u.time))) return book(u.time);
         return nextStep();
       }
+      // "la segunda" when only one time was offered
+      if (state.lastQuestion === 'proposal' && u.option > state.proposals.length) {
+        return out(`Solo te he propuesto ${state.proposals.length === 1 ? `las ${state.proposals[0]}` : listTimes(state.proposals)}. ¿Te ${state.proposals.length === 1 ? 'la reservo' : 'va bien alguna'}?`);
+      }
       if (state.lastQuestion === 'proposal') {
         let time = null;
         if (u.option) time = u.option === -1 ? state.proposals.at(-1) : state.proposals[u.option - 1];
@@ -956,6 +1004,22 @@ function computeReply(message, state = newConversation(), {
       return out('¡Perfecto! 😊');
 
     case 'reschedule':
+      // In the middle of booking a new service, a day or time is part of that booking, not a change to another
+      // appointment she already has (unless she says so: "cámbiame la del corte")
+      if (state.mode === 'book' && state.pending.service && [...BOOKING_QUESTIONS, 'notes'].includes(state.lastQuestion) &&
+          !noneOfThem && !/\b(cambi\w*|pasa\w*|mueve\w*|mover\w*|aplaz\w*|adelant\w*|retras\w*)\b/.test(t)) {
+        merge();
+        return nextStep();
+      }
+      // Several appointments and no way to tell which one she wants to move: ask
+      if (appts.length > 1 && state.mode !== 'reschedule') {
+        const target = matchAppointments(false);
+        if (target.length === 1) focusOn(target[0]);
+        else {
+          state.lastQuestion = 'whichAppointment'; state.whichFor = 'reschedule'; state.proposals = [];
+          return out(`Tienes ${appts.length} citas: ${listAppointments(appts)}. ¿Cuál quieres cambiar?`);
+        }
+      }
       // "ninguna me va bien": a third option that day, or the same times one week later
       if (noneOfThem && state.lastQuestion === 'proposal' && state.pending.date) {
         const p = state.pending;
@@ -1013,6 +1077,15 @@ function computeReply(message, state = newConversation(), {
       }
       // Already asked "¿la anulo o la cambiamos?": now cancel it
       if (['confirmCancel', 'changeOrCancel'].includes(state.lastQuestion)) return cancelAppointment();
+      // Several appointments: which one ("la del viernes", "la de la manicura"), or ask
+      if (appts.length > 1) {
+        const target = matchAppointments(true);
+        if (target.length === 1) focusOn(target[0]);
+        else {
+          state.lastQuestion = 'whichAppointment'; state.whichFor = 'cancel'; state.proposals = [];
+          return out(`Tienes ${appts.length} citas: ${listAppointments(appts)}. ¿Cuál quieres anular?`);
+        }
+      }
       // Never cancel on the first message: a misread would silently lose her appointment
       state.lastQuestion = 'confirmCancel'; state.proposals = [];
       return out(`Vaya 😔 Tienes ${apptText(appt)}. ¿Quieres que la anule o prefieres cambiarla a otro día?`);
@@ -1022,7 +1095,16 @@ function computeReply(message, state = newConversation(), {
         const where = business.address ? `\n📍 ${business.address}` : '';
         return out(`¡Claro! Te lo dejo por escrito 📝\n${appt.name}\n📅 ${formatDate(appt.date, today)}\n🕒 a las ${appt.time}${where}`);
       }
-      if (appt) return out(`Tienes cita ${formatDate(appt.date, today)} a las ${appt.time} para ${appt.name.toLowerCase()}.`);
+      if (appts.length) {
+        // all of them, or the ones she asks about ("¿y la de la manicura?", "¿tengo algo el viernes?")
+        const asked = (u.service || u.date) ? matchAppointments(true) : appts;
+        if (!asked.length) return out(`No veo ninguna cita${u.service ? ` de ${serviceLabel(u)}` : ''}${u.date ? ` ${formatDate(toISODate(u.date), today)}` : ''}. Tienes ${appts.length > 1 ? `estas: ${listAppointments(appts)}` : apptText(appts[0])}.`);
+        if (asked.length === 1) {
+          focusOn(asked[0]);
+          return out(`Tienes cita ${formatDate(asked[0].date, today)} a las ${asked[0].time} para ${asked[0].name.toLowerCase()}.`);
+        }
+        return out(`Tienes ${asked.length} citas: ${listAppointments(asked)}.`);
+      }
       // in the middle of a booking: say so and carry on with it
       if (BOOKING_QUESTIONS.includes(state.lastQuestion)) {
         const step = nextStep();

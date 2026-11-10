@@ -127,6 +127,30 @@ const cases = {
     assert.match((await say(store, SALON, '622', 'como se llama la peluqueria?')).reply, /Somos Peluquería Demo/);
   },
 
+  'several appointments: lists them, asks which one to change or cancel, never touches the other': async () => {
+    const store = await freshStore();
+    const c = await store.findOrCreateCustomer(SALON, require('../src/bot').normalizePhone('611'));
+    await store.createAppointment({ businessId: SALON, customerId: c.id, service: 'corte', name: 'Corte',
+      details: [{ id: 'corte', group: 'corte', name: 'Corte', duration: 30 }], date: '2026-11-11', time: '10:30', duration: 30 });
+    let at = new Date(2026, 10, 10, 10);
+    const s = async t => { at = new Date(at.getTime() + 60000); return (await say(store, SALON, '611', t, at)).reply; };
+    await s('quiero manicura el miércoles 18');
+    await s('el miercoles a las 17:30');
+    await s('sí');
+    assert.equal((await store.listAppointments(SALON)).length, 2, 'the haircut is untouched, the manicure is new');
+    assert.match(await s('mis citas'), /Tienes 2 citas/);
+    assert.match(await s('me puedes cambiar la cita?'), /¿Cuál quieres cambiar\?/);
+    await s('la del corte');
+    await s('el jueves a las 12');
+    await s('sí');
+    const list = await store.listAppointments(SALON);
+    assert.deepEqual(list.map(a => `${a.name} ${a.date} ${a.time}`).sort(), ['Corte 2026-11-12 12:00', 'Manicura 2026-11-18 17:30']);
+    assert.match(await s('cancela la cita'), /¿Cuál quieres anular\?/);
+    await s('la de la manicura');
+    await s('sí');
+    assert.deepEqual((await store.listAppointments(SALON)).map(a => a.name), ['Corte']);
+  },
+
   'waiting list, owner inbox and message history are saved': async () => {
     const store = await freshStore();
     await say(store, SALON, '611', 'si alguien cancela el jueves avísame');

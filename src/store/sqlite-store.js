@@ -196,6 +196,11 @@ class SqliteStore {
     return rowToAppointment(this.db.prepare(`SELECT * FROM appointments WHERE business_id = ? AND customer_id = ?
       AND status = 'booked' AND date >= ? ORDER BY date, time LIMIT 1`).get(businessId, customerId, fromDate)) ?? null;
   }
+  // All her booked appointments from `fromDate` on, soonest first
+  async listCustomerAppointments(businessId, customerId, fromDate) {
+    return this.db.prepare(`SELECT * FROM appointments WHERE business_id = ? AND customer_id = ?
+      AND status = 'booked' AND date >= ? ORDER BY date, time`).all(businessId, customerId, fromDate).map(rowToAppointment);
+  }
   // Her most recent past appointment, for "lo de siempre"
   async getLastAppointment(businessId, customerId, beforeDate) {
     return rowToAppointment(this.db.prepare(`SELECT * FROM appointments WHERE business_id = ? AND customer_id = ?
