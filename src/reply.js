@@ -724,7 +724,7 @@ function computeReply(message, state = newConversation(), {
     case 'undecided':
       // "luego te digo", "lo hablo con mi marido y te confirmo": nothing is booked, the offer is dropped
       state.proposals = []; state.lastQuestion = null;
-      if (u.declined) return out('¡Vale, sin problema! Cuando quieras, escríbeme y te busco hueco 😊');
+      if (u.declined) return out('¡Vale, sin problema! Aquí estamos para lo que necesites 😊');
       return out('¡Vale! Escríbeme cuando lo sepas y te busco hueco 😊');
 
     case 'waitlist': {

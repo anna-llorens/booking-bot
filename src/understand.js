@@ -189,7 +189,7 @@ const SERVICE_CATEGORIES = [
 
 // A polite no to the offer: "gracias, otro día", "en otro momento", "más adelante", "déjalo", "no, gracias".
 // ("otro día" on its own, or "¿me lo pasas a otro día?", is still asking for another day.)
-const DECLINE = /^(vale |ok |bueno |pues |nada )?(gracias|muchas gracias|mil gracias)? ?(pero )?(mejor )?(ya )?(en )?(otro (dia|rato|momento)|mas adelante|en otra ocasion)( gracias| entonces| ya| si eso)?$|^(vale |ok |bueno |pues )?(en otro momento|mas adelante|dejalo|dejalo estar|lo dejamos|lo dejo|lo dejo (para otro dia|para mas adelante)|mejor no|ahora no|de momento no|por ahora no|no gracias|no,? gracias|no hace falta|ya si eso)( gracias| entonces| ya| ya esta| asi esta bien)?$/;
+const DECLINE = /^(vale |ok |bueno |pues |nada )?(gracias|muchas gracias|mil gracias)? ?(pero )?(mejor )?(ya )?(en )?(otro (dia|rato|momento)|mas adelante|en otra ocasion)( gracias| entonces| ya| si eso)?$|^(vale |ok |bueno |pues )?(en otro momento|mas adelante|dejalo|dejalo estar|lo dejamos|lo dejo|lo dejo (para otro dia|para mas adelante)|mejor no|ahora no|de momento no|por ahora no|no gracias|no,? gracias|no hace falta|ya si eso|no quiero( nada)?|no lo quiero|no puedo|no me interesa|no me apetece|paso)( gracias| entonces| ya| ya esta| asi esta bien| de momento| ahora)?$/;
 
 // Wants to hear if a slot frees up: "avísame si queda algo antes", "si alguien cancela…", "lista de espera".
 // "Si alguien cancela" is about someone else, never a cancellation of hers.

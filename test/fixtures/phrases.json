@@ -742,6 +742,11 @@
     {"text":"no gracias, ya está","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no to the offer"},
     {"text":"otro dia","expected":{"intent":"reschedule"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"asks for another day"},
     {"text":"¿me lo pasas a otro día?","expected":{"intent":"reschedule"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"asks for another day"},
-    {"text":"mejor otro día por la tarde","expected":{"intent":"reschedule"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"asks for another day"}
+    {"text":"mejor otro día por la tarde","expected":{"intent":"reschedule"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"asks for another day"},
+    {"text":"no quiero","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no"},
+    {"text":"no puedo","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no"},
+    {"text":"no me interesa, gracias","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no"},
+    {"text":"paso","expected":{"intent":"undecided"},"context":{"lastQuestion":"proposal","proposals":["17:00","18:30"]},"source":"test-ui","note":"polite no"},
+    {"text":"no puedo ir el viernes","expected":{"intent":"cancel"},"source":"test-ui","note":"control: still a cancellation"}
   ]
 }
