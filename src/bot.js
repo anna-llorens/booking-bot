@@ -11,6 +11,7 @@
 // understand.js and reply.js never touch the store; this file is the only place that does.
 const { respond, newConversation, isSimulatedBusy, closedReason, DEFAULT_BUSINESS } = require('./reply');
 const { salonNow } = require('./timezone');
+const { dayHours, fitsInside } = require('./hours');
 
 // A conversation idle for longer than this starts fresh (her appointments are kept, they live in the store)
 const CONVERSATION_TIMEOUT_HOURS = 8;
@@ -36,6 +37,7 @@ function makeIsFree(appointments, settings, own = []) {
   const capacity = settings.capacity ?? 1;
   return (date, start, duration, { ignoreId = null } = {}) => {
     if (closedReason(date, settings)) return false; // weekly day off, public holiday or holidays
+    if (!fitsInside(dayHours(settings, date), start, duration)) return false; // inside one open interval (split days)
     if (settings.simulatedBusy && isSimulatedBusy(date, start)) return false;
     const end = start + duration;
     const overlaps = a => a.id !== ignoreId && a.date === date && toMinutes(a.time) < end && start < toMinutes(a.time) + a.duration;

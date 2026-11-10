@@ -14,13 +14,15 @@
 
 const { understand } = require('./understand');
 const { isNonsense, isLaugh } = require('./dictionary');
+const H = require('./hours');
 const SAMPLE_CATALOG = require('./catalog.json').services;
 
 // Sample business settings. Each business has its own (see src/demo-data.js and the businesses table).
 const DEFAULT_BUSINESS = {
   opens: '09:30',
   closes: '20:00',
-  closedWeekdays: [0],   // 0 = Sunday
+  closedWeekdays: [0],   // 0 = Sunday (only used when there is no `hours`)
+  hours: null,           // per day, split days allowed: { mon: [["09:30","13:30"],["16:30","20:00"]], … }; no entry = closed
   closedDates: [],       // public holidays: ['2026-12-08', '2026-12-25'] (or { date, reason })
   closedRanges: [],      // holidays: [{ from: '2026-08-10', to: '2026-08-24', reason: 'vacaciones' }]
   slotMinutes: 30,       // proposals start every 30 minutes
@@ -36,19 +38,6 @@ const DEFAULT_BUSINESS = {
   askForNotes: true,     // before booking, ask "¿quieres que apunte algo especial?" and save it with the appointment
 };
 
-const WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-// "de lunes a sábado" / "de martes a sábado" / "todos los días"
-function openDaysText(closed) {
-  const open = [1, 2, 3, 4, 5, 6, 0].filter(d => !closed.includes(d));
-  if (open.length === 7) return 'todos los días';
-  return open.length > 1 ? `de ${WEEKDAY_NAMES[open[0]]} a ${WEEKDAY_NAMES[open.at(-1)]}` : `los ${WEEKDAY_NAMES[open[0]]}s`;
-}
-// "Los domingos cerramos." / "Los domingos y lunes cerramos."
-function closedDaysText(closed) {
-  if (!closed.length) return '';
-  const names = [1, 2, 3, 4, 5, 6, 0].filter(d => closed.includes(d)).map(d => WEEKDAY_NAMES[d] + (d === 0 || d === 6 ? 's' : ''));
-  return ` Los ${names.length > 1 ? names.slice(0, -1).join(', ') + ' y ' + names.at(-1) : names[0]} cerramos.`;
-}
 const euros = n => `${Number.isInteger(n) ? n : n.toFixed(2).replace('.', ',')} €`;
 
 const TIME_OF_DAY_RANGES = {     // [from, to) in minutes since midnight
@@ -122,7 +111,7 @@ function isSimulatedBusy(isoDate, mins) {
 
 // Why the salon is closed that day, or null if it is open: a weekly day off, a public holiday or holidays.
 function closedReason(isoDate, business) {
-  if ((business.closedWeekdays ?? []).includes(fromISODate(isoDate).getDay())) return { kind: 'weekday' };
+  if (!H.dayHours(business, isoDate).length) return { kind: 'weekday' };
   for (const c of business.closedDates ?? []) {
     const date = typeof c === 'string' ? c : c.date;
     if (date === isoDate) return { kind: 'holiday', reason: (typeof c === 'object' && c.reason) || 'festivo' };
@@ -149,6 +138,12 @@ function closedNote(c) {
   return 'Ese día estamos cerrados 😔';
 }
 
+// "A mediodía" on a split day: the last hour before the lunch break and the first hour after it
+function middayRanges(day) {
+  const [from, to] = H.lunchBreak(day);
+  return [[Math.max(day[0][0], from - 60), from], [to, Math.min(day[1][1], to + 60)]];
+}
+
 // Last day the diary is open (now + maxDaysAhead)
 function lastBookableDate(now, business) {
   const d = new Date(now); d.setDate(d.getDate() + (business.maxDaysAhead ?? 60));
@@ -164,13 +159,17 @@ function freeSlots(isoDate, { duration, timeOfDay }, now, business, isFree) {
   const earliest = earliestStart(now, business);
   if (isoDate < toISODate(earliest)) return [];
   const minStart = isoDate === toISODate(earliest) ? earliest.getHours() * 60 + earliest.getMinutes() : -1;
-  const [from, to] = TIME_OF_DAY_RANGES[timeOfDay] ?? [0, 24 * 60];
+  const day = H.dayHours(business, isoDate);
+  // the appointment must fit entirely inside one open interval (no 90-minute tint at 12:30 if it closes at 13:30)
+  const ranges = timeOfDay === 'midday' && H.lunchBreak(day) ? middayRanges(day) : H.timeOfDayIntervals(day, timeOfDay);
   const slots = [];
-  for (let m = toMinutes(business.opens); m + duration <= toMinutes(business.closes); m += business.slotMinutes) {
-    if (m < minStart || m < from || m >= to) continue;
-    if (isFree(isoDate, m, duration)) slots.push(m);
+  for (const [a, b] of ranges) {
+    for (let m = a; m + duration <= b; m += business.slotMinutes) {
+      if (m < minStart || !H.fitsInside(day, m, duration)) continue;
+      if (isFree(isoDate, m, duration)) slots.push(m);
+    }
   }
-  return slots;
+  return [...new Set(slots)].sort((x, y) => x - y);
 }
 
 // Picks a few slots spread over the day (or the closest ones to the requested time).
@@ -206,6 +205,19 @@ function serviceExamples(services, max = 4) {
   const rank = s => { const i = COMMON_SERVICES.indexOf(s.group); return i < 0 ? COMMON_SERVICES.length : i; };
   const general = services.filter(s => s.id === s.group).sort((a, b) => rank(a) - rank(b));
   return general.slice(0, max).map(s => displayName(s).toLowerCase());
+}
+
+// Groups consecutive weekdays (Monday → Sunday) with the same text: [{ days: 'de lunes a viernes', text }]
+function groupWeekdays(textByDay) {
+  const groups = [];
+  for (const d of [1, 2, 3, 4, 5, 6, 0]) {
+    const text = textByDay[d];
+    if (text == null) continue;
+    const last = groups.at(-1);
+    if (last && last.text === text && last.days.at(-1) === (d === 0 ? 6 : d - 1)) last.days.push(d); else groups.push({ text, days: [d] });
+  }
+  return groups.map(g => ({ text: g.text, days: g.days.length === 1 ? `los ${H.DAY_PLURALS[g.days[0]]}`
+    : g.days.length === 2 ? `los ${H.DAY_PLURALS[g.days[0]]} y ${H.DAY_PLURALS[g.days[1]]}` : `de ${H.DAY_NAMES[g.days[0]]} a ${H.DAY_NAMES[g.days.at(-1)]}` }));
 }
 
 // ---------- main ----------
@@ -375,7 +387,7 @@ function computeReply(message, state = newConversation(), {
   if (previousTopic === 'price' && followUp && [null, 'book', 'price'].includes(u.intent)) topic = 'price';
 
   // Availability: her own appointment's slot only counts as free while she is moving that appointment
-  const isFree = (date, start, duration) =>
+  const isFree = (date, start, duration) => H.fitsInside(H.dayHours(business, date), start, duration) &&
     isFreeOption(date, start, duration, { ignoreId: state.mode === 'reschedule' && appt?.id ? appt.id : null });
 
   // She may have several appointments; `appt` is the one being talked about
@@ -545,7 +557,10 @@ function computeReply(message, state = newConversation(), {
       const tooLate = !closed && p.date === todayIso &&
         freeSlots(p.date, { duration, timeOfDay: p.timeOfDay }, new Date(fromISODate(todayIso)), business, isFree).length > 0;
       const slotText = p.timeOfDay ? { morning: ' por la mañana', midday: ' a mediodía', afternoon: ' por la tarde' }[p.timeOfDay] : '';
-      note = closed ? closedNote(closed) : tooLate ? 'Para hoy ya no me da tiempo 😔' : `No me queda hueco ${formatDate(p.date, today)}${slotText} 😔`;
+      // "el sábado por la tarde" when Saturdays are mornings only: that part of the day is closed
+      const partClosed = !closed && p.timeOfDay && p.timeOfDay !== 'midday' && !H.timeOfDayIntervals(H.dayHours(business, p.date), p.timeOfDay).length;
+      const When = (w => w[0].toUpperCase() + w.slice(1))(formatDate(p.date, today));
+      note = closed ? closedNote(closed) : partClosed ? `${When}${slotText} cerramos 😔` : tooLate ? 'Para hoy ya no me da tiempo 😔' : `No me queda hueco ${formatDate(p.date, today)}${slotText} 😔`;
       // holidays: look from the day after they end
       const next = fromISODate(closed?.kind === 'range' ? closed.to : p.date); next.setDate(next.getDate() + 1);
       p.fromDate = toISODate(next);
@@ -585,10 +600,28 @@ function computeReply(message, state = newConversation(), {
       return out(`${lead}Tengo hueco ${when} a las ${p.time} para ${serviceLabel(p)}. ¿Te lo reservo?`);
     }
     const question = state.proposals.length === 1 ? '¿Te va bien?' : '¿Cuál te va mejor?';
+    const dayIntervals = H.dayHours(business, p.date);
+    // "a mediodía" on a split day: the last time before the break and the first after it
+    const lunch = H.lunchBreak(dayIntervals);
+    if (p.timeOfDay === 'midday' && lunch && !p.time) {
+      const before = slots.filter(m => m < lunch[0]).at(-1), after = slots.find(m => m >= lunch[1]);
+      state.proposals = [before, after].filter(m => m != null).map(toHHMM);
+      state.offered = { date: p.date, times: [...new Set([...seen, ...state.proposals])] };
+      const times = state.proposals.map(h => `a las ${h}`).join(' o ');
+      return out(`${lead}A mediodía cerramos de ${H.clock(lunch[0])} a ${H.clock(lunch[1])}${times ? `; ${when} tengo ${times}` : ''}. ¿${state.proposals.length > 1 ? 'Cuál te va mejor' : 'Te va bien'}?`);
+    }
     if (chosenByBot) {
       return out(`${lead}Lo primero que tengo para ${serviceLabel(p)} es ${when}: ${listTimes(state.proposals)}. ${question.replace('?', '')}, o prefieres otro día?`);
     }
-    const intro = p.time ? `A las ${p.time} no me queda hueco ${when}. Tengo` : more ? `${when[0].toUpperCase()}${when.slice(1)}${p.timeOfDay ? { morning: ' por la mañana', midday: ' a mediodía', afternoon: ' por la tarde' }[p.timeOfDay] : ''} tengo todo esto` : `Para ${serviceLabel(p)} ${when} tengo`;
+    // why the time she asked for doesn't work: closed then, or the service doesn't fit before closing
+    const asked = p.time ? toMinutes(p.time) : null;
+    const openThen = asked != null && dayIntervals.some(([a, b]) => asked >= a && asked < b);
+    const closesAt = openThen ? dayIntervals.find(([a, b]) => asked >= a && asked < b)[1] : null;
+    const timeIntro = asked == null ? null
+      : !openThen ? `A las ${p.time} ${when} estamos cerrados${lunch && asked >= lunch[0] && asked < lunch[1] ? ` (a mediodía cerramos de ${H.clock(lunch[0])} a ${H.clock(lunch[1])})` : ''}. Tengo`
+      : asked + duration > closesAt ? `A las ${p.time} no da tiempo a hacer ${serviceLabel(p)} antes de cerrar a las ${H.clock(closesAt)}. Tengo`
+      : `A las ${p.time} no me queda hueco ${when}. Tengo`;
+    const intro = p.time ? timeIntro : more ? `${when[0].toUpperCase()}${when.slice(1)}${p.timeOfDay ? { morning: ' por la mañana', midday: ' a mediodía', afternoon: ' por la tarde' }[p.timeOfDay] : ''} tengo todo esto` : `Para ${serviceLabel(p)} ${when} tengo`;
     // "martes o miércoles": the other day too (she can say "el miércoles a las 10")
     let also = '';
     if (p.altDate && p.altDate !== p.date) {
@@ -1190,7 +1223,18 @@ function computeReply(message, state = newConversation(), {
         const When = `${when[0].toUpperCase()}${when.slice(1)}`;
         if (c?.kind === 'range') return out(`${When} no: ${rangeText(c.from, c.to)} ${closedForText(c.reason)} 😔`);
         if (c) return out(`${When} estamos cerrados${c.kind === 'holiday' ? ` (${c.reason})` : ''} 😔`);
-        return out(`Sí, ${when} abrimos de ${business.opens} a ${business.closes} 😊`);
+        const dayH = H.dayHours(business, iso);
+        // "¿el lunes abrís por la tarde?", "¿el sábado cerráis a mediodía?"
+        if (u.timeOfDay === 'midday') {
+          const br = H.lunchBreak(dayH);
+          return out(br ? `${When} cerramos a mediodía, de ${H.clock(br[0])} a ${H.clock(br[1])}. Abrimos ${H.intervalsText(dayH)}.` : `${When} no cerramos a mediodía: abrimos ${H.intervalsText(dayH)} 😊`);
+        }
+        if (u.timeOfDay) {
+          const part = H.timeOfDayIntervals(dayH, u.timeOfDay);
+          const label = u.timeOfDay === 'morning' ? 'por la mañana' : 'por la tarde';
+          return out(part.length ? `Sí, ${when} ${label} abrimos ${H.intervalsText(part)} 😊` : `${When} ${label} cerramos 😔 Abrimos ${H.intervalsText(dayH)}.`);
+        }
+        return out(`Sí, ${when} abrimos ${H.intervalsText(dayH)} 😊`);
       }
       // "¿cerráis en agosto?", "¿abrís en Navidad?": holidays that month
       const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -1204,12 +1248,31 @@ function computeReply(message, state = newConversation(), {
           ...(dates.length ? [`cerramos ${dates.map(d => `el ${fromISODate(d).getDate()}`).join(', ').replace(/, ([^,]*)$/, ' y $1')}`] : []),
         ];
         const name = MONTHS[month];
-        if (parts.length) return out(`En ${name}, ${parts.join(', y ')}. El resto de días, horario normal: ${openDaysText(business.closedWeekdays)} de ${business.opens} a ${business.closes}.`);
-        return out(`En ${name} abrimos con el horario de siempre: ${openDaysText(business.closedWeekdays)} de ${business.opens} a ${business.closes} 😊`);
+        if (parts.length) return out(`En ${name}, ${parts.join(', y ')}. El resto de días, horario normal: ${H.hoursSummary(business)}`);
+        return out(`En ${name} abrimos con el horario de siempre: ${H.hoursSummary(business)}`);
       }
-      if (u.timeOfDay === 'afternoon') return out(`Sí, por la tarde también: ${openDaysText(business.closedWeekdays)} abrimos hasta las ${business.closes}.`);
-      if (u.timeOfDay === 'morning') return out(`Sí, por la mañana abrimos a las ${business.opens}, ${openDaysText(business.closedWeekdays)}.`);
-      return out(`Abrimos ${openDaysText(business.closedWeekdays)} de ${business.opens} a ${business.closes}.${closedDaysText(business.closedWeekdays)}`);
+      // "¿cerráis a mediodía?", "¿abrís por las tardes?", "¿y por la mañana?": from the hours, days grouped
+      if (u.timeOfDay) {
+        const week = H.weekHours(business);
+        const byDay = week.map(d => {
+          if (u.timeOfDay === 'midday') { const br = H.lunchBreak(d); return br ? `cerramos de ${H.clock(br[0])} a ${H.clock(br[1])}` : d.length ? 'abrimos sin cerrar' : null; }
+          const part = H.timeOfDayIntervals(d, u.timeOfDay);
+          if (!part.length) return null;
+          // a continuous day: "hasta las 20:00" / "desde las 9:30"; a split day: its own interval
+          if (d.length === 1) return u.timeOfDay === 'afternoon' ? `hasta las ${H.clock(d[0][1])}` : `desde las ${H.clock(d[0][0])}`;
+          return H.intervalsText(part);
+        });
+        const groups = groupWeekdays(byDay);
+        if (u.timeOfDay === 'midday') {
+          if (!week.some(d => H.lunchBreak(d))) return out(`No cerramos a mediodía 😊 ${H.hoursSummary(business)}`);
+          return out(`A mediodía ${groups.map(g => `${g.days} ${g.text}`).join('; ')}.`);
+        }
+        const label = u.timeOfDay === 'morning' ? 'por la mañana' : 'por la tarde';
+        if (!groups.length) return out(`${label[0].toUpperCase()}${label.slice(1)} no abrimos 😔 ${H.hoursSummary(business)}`);
+        const also = previousTopic === 'hours' ? ' también' : '';
+        return out(`Sí, ${label}${also}: ${groups.map(g => `${g.days} ${g.text}`).join('; ')}.`);
+      }
+      return out(H.hoursSummary(business));
     }
 
     case 'price': {

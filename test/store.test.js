@@ -104,7 +104,7 @@ const cases = {
     const store = await freshStore();
     assert.match((await say(store, SALON, '611', 'cuanto cuesta un corte?')).reply, /Corte: 15 €/);
     assert.match((await say(store, BEAUTY, '611', 'dónde estáis?')).reply, /Diagonal 200/);
-    assert.match((await say(store, BEAUTY, '612', 'abrís los lunes?')).reply, /de martes a sábado/);
+    assert.match((await say(store, BEAUTY, '612', 'abrís los lunes?')).reply, /de martes a sábado/i);
   },
 
   'public holidays from the salon settings are closed, also for makeIsFree': async () => {
@@ -201,7 +201,8 @@ const cases = {
   'daylight saving: an appointment at 10:00 on the day the clocks change stays at 10:00': async () => {
     const store = await freshStore();
     const b = await store.getBusiness(SALON);
-    await store.saveBusiness({ ...b, settings: { ...b.settings, closedWeekdays: [], simulatedBusy: false } }); // 2027-03-28 is a Sunday
+    // 2027-03-28 is a Sunday: open it for this test
+    await store.saveBusiness({ ...b, settings: { ...b.settings, hours: { ...b.settings.hours, sun: [['09:30', '13:30']] }, simulatedBusy: false } });
     await say(store, SALON, '611', 'corte el 28 de marzo a las 10', madrid('2027-03-20T10:00'));
     await say(store, SALON, '611', 'sí', madrid('2027-03-20T10:01'));
     const [a] = await store.listAppointments(SALON);

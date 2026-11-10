@@ -111,7 +111,7 @@ Service descriptions: each salon can give a service a `description` (catalog / `
 
 **It proposes, it doesn't ask.** With a service it always offers 2 times on the first day that has room ("Lo primero que tengo para corte es mañana: 1) 10:00 2) 17:30. ¿Cuál te va mejor, o prefieres otro día?"). Closed or full day → it says so and offers the next one. "Ninguna" → other times that day, never repeating one, then the same times a week later.
 
-**It respects the diary.** Weekly days off, public holidays (`closedDates`: "Ese día estamos cerrados (festivo) 😔") and holidays (`closedRanges`: "Del 10 al 24 de agosto estamos de vacaciones 😔") are never proposed; it offers the next open day. Nothing starts sooner than `minNoticeMinutes` from now ("Para hoy ya no me da tiempo 😔", and a time that falls inside that window by the time she says yes is not booked). Beyond `maxDaysAhead` it says how far the diary is open and offers the waiting list for that day.
+**It respects the diary.** Opening hours per day, with split days: "por la mañana" / "por la tarde" are the morning and afternoon intervals, "a mediodía" on a split day offers the last time before the break and the first after it, a time in the break gets "a las 14:30 estamos cerrados (a mediodía cerramos de 13:30 a 16:30)", and a long service that doesn't fit before closing gets "no da tiempo a hacer tinte antes de cerrar a las 13:30". Opening-hours answers group the days ("De lunes a viernes de 9:30 a 13:30 y de 16:30 a 20:00. Sábados de 9:00 a 14:00. Domingos cerrado."). Weekly days off, public holidays (`closedDates`: "Ese día estamos cerrados (festivo) 😔") and holidays (`closedRanges`: "Del 10 al 24 de agosto estamos de vacaciones 😔") are never proposed; it offers the next open day. Nothing starts sooner than `minNoticeMinutes` from now ("Para hoy ya no me da tiempo 😔", and a time that falls inside that window by the time she says yes is not booked). Beyond `maxDaysAhead` it says how far the diary is open and offers the waiting list for that day.
 
 **It never does something irreversible on a guess.** Cancelling always asks first. "Sí" + a day that isn't her appointment's asks before moving it. A slot taken by someone else between the proposal and her "sí" is not double-booked ("esa hora se acaba de ocupar"). "Lo hablo con mi marido y te confirmo" books nothing.
 
@@ -135,8 +135,9 @@ Each salon's settings live in `businesses.settings` (JSON). Anything left out ta
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `opens`, `closes` | `"09:30"`, `"20:00"` | Opening hours (every open day) |
-| `closedWeekdays` | `[0]` | Weekly days off (0 = Sunday … 6 = Saturday) |
+| `hours` | `null` | Hours per day, split days allowed: `{ "mon": [["09:30","13:30"],["16:30","20:00"]], …, "sat": [["09:00","14:00"]] }`. A day with no entry is closed. An appointment must fit entirely inside one interval |
+| `opens`, `closes` | `"09:30"`, `"20:00"` | Used only when there is no `hours`: the same hours every open day |
+| `closedWeekdays` | `[0]` | Used only when there is no `hours`: weekly days off (0 = Sunday … 6 = Saturday) |
 | `closedDates` | `[]` | Public holidays: `"2026-12-08"` or `{ "date": "2026-12-26", "reason": "Sant Esteve" }` |
 | `closedRanges` | `[]` | Holidays or other closures: `{ "from": "2026-08-10", "to": "2026-08-24", "reason": "vacaciones" }` |
 | `slotMinutes` | `30` | Proposals start every 30 minutes |
@@ -155,9 +156,14 @@ A complete example:
 
 ```json
 {
-  "opens": "09:30",
-  "closes": "20:00",
-  "closedWeekdays": [0],
+  "hours": {
+    "mon": [["09:30", "13:30"], ["16:30", "20:00"]],
+    "tue": [["09:30", "13:30"], ["16:30", "20:00"]],
+    "wed": [["09:30", "13:30"], ["16:30", "20:00"]],
+    "thu": [["09:30", "13:30"], ["16:30", "20:00"]],
+    "fri": [["09:30", "13:30"], ["16:30", "20:00"]],
+    "sat": [["09:00", "14:00"]]
+  },
   "closedDates": ["2026-12-08", "2026-12-25", { "date": "2026-12-26", "reason": "Sant Esteve" }],
   "closedRanges": [{ "from": "2027-08-09", "to": "2027-08-22", "reason": "vacaciones" }],
   "slotMinutes": 30,
@@ -178,7 +184,7 @@ A complete example:
 }
 ```
 
-The two demo salons in `src/demo-data.js` have examples of all of these (the beauty center leaves `parking` empty, so that question goes to the owner). Their settings are refreshed from the code on every start; real salons are never touched.
+The two demo salons in `src/demo-data.js` have examples of all of these: the hair salon has split hours and Saturday mornings, the beauty center continuous hours (and leaves `parking` empty, so that question goes to the owner). Their settings are refreshed from the code on every start; real salons are never touched.
 
 ## Data and privacy
 

@@ -77,8 +77,8 @@ All tables (except `businesses`) have `business_id`; every query filters by it. 
 
 ```json
 {
-  "opens": "09:30", "closes": "20:00",
-  "closedWeekdays": [0],        // 0 = Sunday
+  "hours": { "mon": [["09:30", "13:30"], ["16:30", "20:00"]], …, "sat": [["09:00", "14:00"]] },  // no entry = closed
+  // (or, without "hours": "opens": "09:30", "closes": "20:00", "closedWeekdays": [0])
   "slotMinutes": 30,            // proposals start every 30 minutes
   "maxProposals": 2,            // times offered at once
   "capacity": 1,                // appointments that may overlap (chairs / staff)
@@ -114,7 +114,9 @@ Everything the bot needs from storage is in [src/store/README.md](../src/store/R
 
 `closedReason()` in `reply.js` tells whether a day is closed (weekly day off, `closedDates`, `closedRanges`); `freeSlots()`, `makeIsFree()` and the test seeding all use it. `minNoticeMinutes` and `maxDaysAhead` are applied in `freeSlots()` with the `now` option, so `reply.js` stays pure.
 
-Not modelled yet: staff and which staff member does which service, breaks, different hours per day. They would go into `settings` (or new tables) and into `makeIsFree()`, without touching `reply.js`'s logic.
+Opening hours come from `src/hours.js`: `settings.hours` per day (split days with a lunch break, Saturday mornings…), or `opens` / `closes` / `closedWeekdays` for salons that don't set `hours`. An appointment must fit entirely inside one open interval; `freeSlots()`, `closedReason()`, `makeIsFree()` and the "same time next week" rule all use it.
+
+Not modelled yet: staff and which staff member does which service. They would go into `settings` (or new tables) and into `makeIsFree()`, without touching `reply.js`'s logic.
 
 ## Conversations
 

@@ -30,7 +30,13 @@ const DEMO_BUSINESSES = [
     id: 'demo-peluqueria',
     name: 'Peluquería Demo',
     settings: {
-      opens: '09:30', closes: '20:00', closedWeekdays: [0], slotMinutes: 30, maxProposals: 2, capacity: 1,
+      // split hours (a lunch break) and Saturdays mornings only
+      hours: {
+        mon: [['09:30', '13:30'], ['16:30', '20:00']], tue: [['09:30', '13:30'], ['16:30', '20:00']],
+        wed: [['09:30', '13:30'], ['16:30', '20:00']], thu: [['09:30', '13:30'], ['16:30', '20:00']],
+        fri: [['09:30', '13:30'], ['16:30', '20:00']], sat: [['09:00', '14:00']],
+      },
+      slotMinutes: 30, maxProposals: 2, capacity: 1,
       address: 'Carrer Major 12, Barcelona',
       closedDates: ['2026-12-08', '2026-12-25', '2027-01-01', '2027-01-06'],
       closedRanges: [{ from: '2027-08-09', to: '2027-08-22', reason: 'vacaciones' }],
