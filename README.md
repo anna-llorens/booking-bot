@@ -102,7 +102,7 @@ Every table is keyed by salon: a salon never sees another salon's customers. See
 
 Other situations handled by `reply.js`: lost things ("me he dejado el paraguas" → the owner, "Lo miramos y te decimos enseguida"), only punctuation ("??????" → "¿Sí? Dime…"), laughs and emojis (😊), reactions ("qué fuerte" → "Vaya 😔"), apologies ("perdona!!" → "¡No pasa nada!"), "ya estoy en la puerta" (the owner is told), "no sé qué quiero hacerme" (helps her choose), "¿qué me recomiendas?" once a service is chosen (passed to the stylist), "ayer no pude ir" (no telling off: offers a new day and tells the owner), the address ("¿dónde estáis?"), "¿hacéis alisado?" ("¡Sí, hacemos…!"), "ya me dices cuando puedas" (waits for the salon).
 
-**Language details it copes with:** accents and capitals, stretched letters ("holaaa"), WhatsApp spellings and abbreviations ("q", "xfa", "mñn", "kiero", "huekito", "pal"), typos in service names ("tiente"), "uñas" vs "unas mechas", "la segunda **vez**" (not option 2), "las dos **cosas**" (not 14:00), conditional "si" vs "sí", "el miércoles que viene" said on a Tuesday (next week's: tomorrow would be "mañana"), Catalan "demà".
+**Language details it copes with:** accents and capitals, stretched letters ("holaaa"), WhatsApp spellings and abbreviations ("q", "xfa", "mñn", "kiero", "huekito", "pal"), typos in service names ("tiente", "mehcas") and in key words ("servivios", "precois", "cancelr"), as long as the misspelling isn't a real Spanish word, "uñas" vs "unas mechas", "la segunda **vez**" (not option 2), "las dos **cosas**" (not 14:00), conditional "si" vs "sí", "el miércoles que viene" said on a Tuesday (next week's: tomorrow would be "mañana"), Catalan "demà".
 
 ## How the bot behaves
 
@@ -206,9 +206,9 @@ Labelling tips: not every "vale" is `confirm` (it can be `undecided`, or the ans
 
 | File | Checks |
 |---|---|
-| `test/understand.test.js` + `test/fixtures/phrases.json` | 704 single messages (intent, topic, service, date, time…) |
+| `test/understand.test.js` + `test/fixtures/phrases.json` | 727 single messages (intent, topic, service, date, time…) |
 | `test/reply.test.js` | Short scripted conversations through `respond()` |
-| `test/conversations.test.js` + `test/fixtures/conversations.json` | 42 whole conversations, optionally with salon settings: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
+| `test/conversations.test.js` + `test/fixtures/conversations.json` | 43 whole conversations, optionally with salon settings: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
 | `test/store.test.js` | Database and `bot.js` end to end on an in-memory SQLite: salons kept apart, no double booking, moves update, cancel asks first, "lo de siempre" from history, phone formats, holidays, notes, GDPR delete |
 
 `npm test` runs all four.

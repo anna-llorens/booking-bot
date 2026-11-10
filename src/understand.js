@@ -102,10 +102,20 @@ function normalize(text) {
     .replace(/[¿?¡!.,;]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return t.split(' ').map(w => REPLACEMENTS[w] ?? w).join(' ');
+  return t.split(' ').map(w => REPLACEMENTS[w] ?? keywordTypo(w) ?? w).join(' ');
 }
 
-// Levenshtein distance, to accept typos ("tiente" -> "tinte")
+// Typos in the bot's own key words ("servivios", "precois", "horaio", "cancelr"): a word of 6+ letters that
+// doesn't exist in Spanish and is one letter away from a key word is read as that key word.
+const KEYWORDS = ['servicios', 'servicio', 'precios', 'precio', 'horario', 'horarios', 'cancelar', 'cambiar', 'reservar',
+  'peluqueria', 'depilacion', 'tratamientos', 'disponible', 'manana', 'semana', 'viernes', 'miercoles', 'sabado', 'jueves'];
+function keywordTypo(w) {
+  if (w.length < 6 || KEYWORDS.includes(w) || !/^[a-z]+$/.test(w)) return null;
+  const close = KEYWORDS.find(k => Math.abs(k.length - w.length) <= 1 && distance(w, k) <= 1);
+  return close && !isRealWord(w) ? close : null;
+}
+
+// Edit distance (with swapped letters), to accept typos ("tiente" -> "tinte", "precois" -> "precios")
 function distance(a, b) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
   for (let j = 1; j <= b.length; j++) d[0][j] = j;
@@ -113,6 +123,8 @@ function distance(a, b) {
     for (let j = 1; j <= b.length; j++) {
       d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1,
         d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      // two letters swapped ("precois") count as one typo
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
     }
   }
   return d[a.length][b.length];
