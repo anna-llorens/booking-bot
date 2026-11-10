@@ -198,6 +198,15 @@ const noteFrom = (message, t) => NOTE_HINT.test(t) ? message.trim().replace(/\s+
 // "¿Qué día…" → "¿qué día…" (skips the opening ¿ / ¡)
 const lowerFirst = s => s.replace(/^([¿¡]?)(\p{L})/u, (_, p, c) => p + c.toLowerCase());
 
+// A few of the salon's own general services, from different categories, as examples in questions:
+// "corte, tinte, mechas, manicura" for a hair salon, "limpieza facial, depilación, manicura…" for a beauty center.
+const COMMON_SERVICES = ['corte', 'tinte', 'mechas', 'manicura', 'depilacion', 'facial', 'peinado', 'pedicura', 'masaje', 'barba'];
+function serviceExamples(services, max = 4) {
+  const rank = s => { const i = COMMON_SERVICES.indexOf(s.group); return i < 0 ? COMMON_SERVICES.length : i; };
+  const general = services.filter(s => s.id === s.group).sort((a, b) => rank(a) - rank(b));
+  return general.slice(0, max).map(s => displayName(s).toLowerCase());
+}
+
 // ---------- main ----------
 
 // Same reply as the previous one ("vale" → "¡Perfecto! 😊" over and over): the bot stays silent.
@@ -446,7 +455,7 @@ function computeReply(message, state = newConversation(), {
     state.proposals = [];
     if (!p.service) {
       state.lastQuestion = 'service';
-      return out('¿Qué servicio te quieres hacer? (corte, tinte, mechas, manicura…)');
+      return out(`¿Qué servicio te quieres hacer? (${serviceExamples(services).join(', ')}…)`);
     }
     const duration = p.duration || 30;
     const slotsOn = iso => freeSlots(iso, { duration, timeOfDay: p.timeOfDay }, now, business, isFree).filter(m => !exclude.includes(toHHMM(m)));
@@ -566,6 +575,22 @@ function computeReply(message, state = newConversation(), {
       return book(time, { skipNotes: true });
     }
     state.lastQuestion = 'proposal'; // she changed something: carry on as with any offer
+  }
+
+  // A service that exists but this salon doesn't do ("tinte" at a beauty center): say so, don't ask "¿qué servicio?"
+  if (!u.service && services !== SAMPLE_CATALOG && ['book', 'price', 'duration', 'choose', null].includes(u.intent) &&
+      !['notes', 'confirmCancel', 'changeOrCancel'].includes(state.lastQuestion)) {
+    const general = understand(message, { today, services: SAMPLE_CATALOG });
+    if (general.service && general.service !== 'LAST' && !services.some(s => s.group === general.service)) {
+      const label = serviceLabel(general);
+      const name = business.name ? `En ${business.name} no hacemos` : 'No hacemos';
+      if (BOOKING_QUESTIONS.includes(state.lastQuestion) && state.pending.service) {
+        const step = nextStep();
+        return { ...step, reply: `${name} ${label} 😔 ${step.reply}` };
+      }
+      state.lastQuestion = 'service'; state.proposals = [];
+      return out(`${name} ${label} 😔 Lo que sí hacemos: ${serviceExamples(services, 5).join(', ')}… Si quieres, te enseño la lista completa («servicios»).`);
+    }
   }
 
   // "ya me dices cuando puedas", "me dices algo": she is waiting for the salon, not choosing a time
@@ -968,7 +993,8 @@ function computeReply(message, state = newConversation(), {
       // "precios" with no service at all: ask which one instead of handing it over
       if (!source) {
         state.lastQuestion = 'priceService'; state.proposals = [];
-        return out('¿De qué servicio quieres saber el precio? (por ejemplo, corte, tinte o manicura) Si quieres, te digo los precios de un tipo de servicio: «precios de uñas», «precios de color»…');
+        const ex = serviceExamples(services, 3);
+        return out(`¿De qué servicio quieres saber el precio? (por ejemplo, ${ex.slice(0, -1).join(', ')} o ${ex.at(-1)}) Si quieres, te digo los precios de un tipo de servicio, por ejemplo «precios de uñas».`);
       }
       const what = source ? ` de ${serviceLabel(source)}` : '';
       // Prices in the catalog: answer directly. Otherwise the owner answers.

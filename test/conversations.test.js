@@ -4,6 +4,8 @@
 //        node test/conversations.test.js --verbose  (prints every turn)
 const { respond, newConversation } = require('../src/reply');
 const { conversations } = require('./fixtures/conversations.json');
+// "services": "beauty" = the demo beauty center's catalog (no hair services)
+const BEAUTY = require('../src/demo-data').DEMO_BUSINESSES.find(b => b.id === 'demo-estetica').services;
 
 const verbose = process.argv.includes('--verbose');
 let passed = 0;
@@ -56,7 +58,8 @@ for (const conv of conversations) {
   const lines = [];
   conv.messages.forEach((m, i) => {
     // conversations written before the notes question keep booking in one step unless they turn it on
-    const r = respond(m.text, state, { today: new Date(m.today), business: { askForNotes: false, ...conv.business } });
+    const services = conv.services === 'beauty' ? BEAUTY : undefined;
+    const r = respond(m.text, state, { today: new Date(m.today), business: { askForNotes: false, ...conv.business }, services });
     state = r.state;
     lines.push(`    > ${m.text}\n      [${r.understanding.intent}${r.handover ? ' →owner' : ''}] ${r.reply}`);
     if (m.expect) checkTurn(m.expect, r).forEach(e => errors.push(`message ${i + 1} ("${m.text}"): ${e}`));
