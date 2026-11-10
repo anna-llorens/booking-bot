@@ -16,6 +16,7 @@ const path = require('path');
 const { createStore, DEFAULT_FILE } = require('../src/store');
 const { seedDemoData } = require('../src/demo-data');
 const { handleMessage, resetConversation, makeIsFree, normalizePhone } = require('../src/bot');
+const { closedReason } = require('../src/reply');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PAGE = path.join(__dirname, 'public', 'index.html');
@@ -148,8 +149,8 @@ async function seedAppointment({ businessId, phone, today }) {
   const d = new Date(now);
   for (let i = 0; i < 14; i++) {
     d.setDate(d.getDate() + 1);
-    if ((s.closedWeekdays ?? []).includes(d.getDay())) continue;
     const date = toISODate(d);
+    if (closedReason(date, s)) continue;
     const isFree = makeIsFree(await store.listAppointments(businessId, { from: date, to: date }), { ...s, simulatedBusy: false });
     for (let m = 10 * 60; m + (service.duration ?? 30) <= 19 * 60; m += 30) {
       if (!isFree(date, m, service.duration ?? 30)) continue;

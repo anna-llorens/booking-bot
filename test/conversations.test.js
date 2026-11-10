@@ -55,7 +55,7 @@ for (const conv of conversations) {
   const errors = [];
   const lines = [];
   conv.messages.forEach((m, i) => {
-    const r = respond(m.text, state, { today: new Date(m.today) });
+    const r = respond(m.text, state, { today: new Date(m.today), business: conv.business });
     state = r.state;
     lines.push(`    > ${m.text}\n      [${r.understanding.intent}${r.handover ? ' →owner' : ''}] ${r.reply}`);
     if (m.expect) checkTurn(m.expect, r).forEach(e => errors.push(`message ${i + 1} ("${m.text}"): ${e}`));

@@ -19,6 +19,8 @@ const DEMO_BUSINESSES = [
     settings: {
       opens: '09:30', closes: '20:00', closedWeekdays: [0], slotMinutes: 30, maxProposals: 2, capacity: 1,
       address: 'Carrer Major 12, Barcelona',
+      closedDates: ['2026-12-08', '2026-12-25', '2027-01-01', '2027-01-06'],
+      closedRanges: [{ from: '2027-08-09', to: '2027-08-22', reason: 'vacaciones' }],
       simulatedBusy: true, // also block the simulated busy slots, so the demo calendar isn't empty
     },
     services: withPrices(SAMPLE_CATALOG),
@@ -29,6 +31,8 @@ const DEMO_BUSINESSES = [
     settings: {
       opens: '10:00', closes: '19:00', closedWeekdays: [0, 1], slotMinutes: 30, maxProposals: 2, capacity: 2,
       address: 'Avinguda Diagonal 200, Barcelona',
+      closedDates: ['2026-12-08', { date: '2026-12-26', reason: 'Sant Esteve' }],
+      closedRanges: [{ from: '2026-12-28', to: '2027-01-06', reason: 'vacaciones de Navidad' }],
       simulatedBusy: true,
     },
     services: withPrices(SAMPLE_CATALOG.filter(s => BEAUTY_CATEGORIES.includes(s.category))),

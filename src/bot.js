@@ -9,7 +9,7 @@
 //      both messages, and a handover to the owner's inbox when needed
 //
 // understand.js and reply.js never touch the store; this file is the only place that does.
-const { respond, newConversation, isSimulatedBusy } = require('./reply');
+const { respond, newConversation, isSimulatedBusy, closedReason } = require('./reply');
 
 // A conversation idle for longer than this starts fresh (her appointments are kept, they live in the store)
 const CONVERSATION_TIMEOUT_HOURS = 8;
@@ -34,6 +34,7 @@ const toStateAppointment = a => a && { id: a.id, service: a.service, name: a.nam
 function makeIsFree(appointments, settings, ignoreId) {
   const capacity = settings.capacity ?? 1;
   return (date, start, duration) => {
+    if (closedReason(date, settings)) return false; // weekly day off, public holiday or holidays
     if (settings.simulatedBusy && isSimulatedBusy(date, start)) return false;
     const end = start + duration;
     const overlapping = appointments.filter(a => a.id !== ignoreId && a.date === date &&

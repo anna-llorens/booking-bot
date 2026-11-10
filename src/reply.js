@@ -21,6 +21,8 @@ const DEFAULT_BUSINESS = {
   opens: '09:30',
   closes: '20:00',
   closedWeekdays: [0],   // 0 = Sunday
+  closedDates: [],       // public holidays: ['2026-12-08', '2026-12-25'] (or { date, reason })
+  closedRanges: [],      // holidays: [{ from: '2026-08-10', to: '2026-08-24', reason: 'vacaciones' }]
   slotMinutes: 30,       // proposals start every 30 minutes
   maxProposals: 2,       // how many times the bot offers at once
   capacity: 1,           // appointments that can overlap (chairs / staff)
@@ -111,9 +113,37 @@ function isSimulatedBusy(isoDate, mins) {
   return h % 10 < 4; // ~40 % of slots busy
 }
 
+// Why the salon is closed that day, or null if it is open: a weekly day off, a public holiday or holidays.
+function closedReason(isoDate, business) {
+  if ((business.closedWeekdays ?? []).includes(fromISODate(isoDate).getDay())) return { kind: 'weekday' };
+  for (const c of business.closedDates ?? []) {
+    const date = typeof c === 'string' ? c : c.date;
+    if (date === isoDate) return { kind: 'holiday', reason: (typeof c === 'object' && c.reason) || 'festivo' };
+  }
+  for (const r of business.closedRanges ?? []) {
+    if (isoDate >= r.from && isoDate <= r.to) return { kind: 'range', reason: r.reason || 'vacaciones', from: r.from, to: r.to };
+  }
+  return null;
+}
+
+const monthName = iso => fromISODate(iso).toLocaleDateString('es-ES', { month: 'long' });
+// "del 10 al 24 de agosto" / "del 28 de diciembre al 6 de enero"
+function rangeText(from, to) {
+  const a = fromISODate(from), b = fromISODate(to);
+  return a.getMonth() === b.getMonth()
+    ? `del ${a.getDate()} al ${b.getDate()} de ${monthName(to)}`
+    : `del ${a.getDate()} de ${monthName(from)} al ${b.getDate()} de ${monthName(to)}`;
+}
+// "estamos de vacaciones" / "estamos cerrados por reformas"
+const closedForText = reason => /^vacaciones/i.test(reason) ? `estamos de ${reason}` : `estamos cerrados por ${reason}`;
+function closedNote(c) {
+  if (c.kind === 'holiday') return `Ese día estamos cerrados (${c.reason}) 😔`;
+  if (c.kind === 'range') { const t = rangeText(c.from, c.to); return `${t[0].toUpperCase()}${t.slice(1)} ${closedForText(c.reason)} 😔`; }
+  return 'Ese día estamos cerrados 😔';
+}
+
 function freeSlots(isoDate, { duration, timeOfDay }, today, business, isFree) {
-  const day = fromISODate(isoDate);
-  if (business.closedWeekdays.includes(day.getDay())) return [];
+  if (closedReason(isoDate, business)) return [];
   const nowMins = isoDate === toISODate(today) ? today.getHours() * 60 + today.getMinutes() : -1;
   const [from, to] = TIME_OF_DAY_RANGES[timeOfDay] ?? [0, 24 * 60];
   const slots = [];
@@ -369,14 +399,14 @@ function computeReply(message, state = newConversation(), {
       return out('¿Qué servicio te quieres hacer? (corte, tinte, mechas, manicura…)');
     }
     const duration = p.duration || 30;
-    const slotsOn = iso => business.closedWeekdays.includes(fromISODate(iso).getDay()) ? []
-      : freeSlots(iso, { duration, timeOfDay: p.timeOfDay }, today, business, isFree).filter(m => !exclude.includes(toHHMM(m)));
+    const slotsOn = iso => freeSlots(iso, { duration, timeOfDay: p.timeOfDay }, today, business, isFree).filter(m => !exclude.includes(toHHMM(m)));
     let note = '';
     if (p.date && !slotsOn(p.date).length) {
-      const closed = business.closedWeekdays.includes(fromISODate(p.date).getDay());
+      const closed = closedReason(p.date, business);
       const slotText = p.timeOfDay ? { morning: ' por la mañana', midday: ' a mediodía', afternoon: ' por la tarde' }[p.timeOfDay] : '';
-      note = closed ? 'Ese día estamos cerrados 😔' : `No me queda hueco ${formatDate(p.date, today)}${slotText} 😔`;
-      const next = fromISODate(p.date); next.setDate(next.getDate() + 1);
+      note = closed ? closedNote(closed) : `No me queda hueco ${formatDate(p.date, today)}${slotText} 😔`;
+      // holidays: look from the day after they end
+      const next = fromISODate(closed?.kind === 'range' ? closed.to : p.date); next.setDate(next.getDate() + 1);
       p.fromDate = toISODate(next);
       delete p.date; delete p.time;
     }
@@ -664,7 +694,7 @@ function computeReply(message, state = newConversation(), {
         if (!newDay) {
           const d = fromISODate(sameDay); d.setDate(d.getDate() + 7);
           const iso = toISODate(d);
-          const free = business.closedWeekdays.includes(d.getDay()) ? []
+          const free = closedReason(iso, business) ? []
             : offered.filter(h => isFree(iso, toMinutes(h), p.duration || 30));
           if (free.length) {
             p.date = iso; delete p.time;
@@ -717,10 +747,36 @@ function computeReply(message, state = newConversation(), {
       state.lastQuestion = 'offerBooking'; state.proposals = [];
       return out('Ahora mismo no tienes ninguna cita reservada. ¿Quieres pedir una?');
 
-    case 'hours':
+    case 'hours': {
+      // "¿abrís el 8 de diciembre?", "¿el sábado estáis?": that day
+      if (u.date) {
+        const iso = toISODate(u.date);
+        const c = closedReason(iso, business);
+        const when = formatDate(iso, today);
+        const When = `${when[0].toUpperCase()}${when.slice(1)}`;
+        if (c?.kind === 'range') return out(`${When} no: ${rangeText(c.from, c.to)} ${closedForText(c.reason)} 😔`);
+        if (c) return out(`${When} estamos cerrados${c.kind === 'holiday' ? ` (${c.reason})` : ''} 😔`);
+        return out(`Sí, ${when} abrimos de ${business.opens} a ${business.closes} 😊`);
+      }
+      // "¿cerráis en agosto?", "¿abrís en Navidad?": holidays that month
+      const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+      const month = /\bnavidad(es)?\b/.test(t) ? 11 : MONTHS.findIndex(m => new RegExp(`\\b${m}\\b`).test(t));
+      if (month >= 0) {
+        const inMonth = iso => fromISODate(iso).getMonth() === month;
+        const ranges = (business.closedRanges ?? []).filter(r => inMonth(r.from) || inMonth(r.to));
+        const dates = (business.closedDates ?? []).map(c => (typeof c === 'string' ? c : c.date)).filter(inMonth);
+        const parts = [
+          ...ranges.map(r => `${rangeText(r.from, r.to)} ${closedForText(r.reason || 'vacaciones')}`),
+          ...(dates.length ? [`cerramos ${dates.map(d => `el ${fromISODate(d).getDate()}`).join(', ').replace(/, ([^,]*)$/, ' y $1')}`] : []),
+        ];
+        const name = MONTHS[month];
+        if (parts.length) return out(`En ${name}, ${parts.join(', y ')}. El resto de días, horario normal: ${openDaysText(business.closedWeekdays)} de ${business.opens} a ${business.closes}.`);
+        return out(`En ${name} abrimos con el horario de siempre: ${openDaysText(business.closedWeekdays)} de ${business.opens} a ${business.closes} 😊`);
+      }
       if (u.timeOfDay === 'afternoon') return out(`Sí, por la tarde también: ${openDaysText(business.closedWeekdays)} abrimos hasta las ${business.closes}.`);
       if (u.timeOfDay === 'morning') return out(`Sí, por la mañana abrimos a las ${business.opens}, ${openDaysText(business.closedWeekdays)}.`);
       return out(`Abrimos ${openDaysText(business.closedWeekdays)} de ${business.opens} a ${business.closes}.${closedDaysText(business.closedWeekdays)}`);
+    }
 
     case 'price': {
       remember(u.details);
@@ -815,4 +871,4 @@ function computeReply(message, state = newConversation(), {
   }
 }
 
-module.exports = { respond, newConversation, DEFAULT_BUSINESS, isSimulatedBusy, serviceLabel };
+module.exports = { respond, newConversation, DEFAULT_BUSINESS, isSimulatedBusy, serviceLabel, closedReason };

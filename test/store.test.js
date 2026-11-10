@@ -100,6 +100,18 @@ const cases = {
     assert.match((await say(store, BEAUTY, '612', 'abrís los lunes?')).reply, /de martes a sábado/);
   },
 
+  'public holidays from the salon settings are closed, also for makeIsFree': async () => {
+    const store = await freshStore();
+    const at = new Date(2026, 10, 30, 10, 0);
+    const r = await say(store, SALON, '611', 'quiero cita para corte el 8 de diciembre', at);
+    assert.match(r.reply, /cerrados \(festivo\)/);
+    assert.doesNotMatch(r.reply, /8 de diciembre:/);
+    const { makeIsFree } = require('../src/bot');
+    const settings = (await store.getBusiness(SALON)).settings;
+    assert.equal(makeIsFree([], { ...settings, simulatedBusy: false })('2026-12-08', 600, 30), false);
+    assert.equal(makeIsFree([], { ...settings, simulatedBusy: false })('2026-12-09', 600, 30), true);
+  },
+
   'waiting list, owner inbox and message history are saved': async () => {
     const store = await freshStore();
     await say(store, SALON, '611', 'si alguien cancela el jueves avísame');
