@@ -173,7 +173,7 @@ const BOOKING_REQUEST = /\b(me (das|dais|puedes dar|podeis dar|coges|cogeis|apun
 // "¿cómo se llama la peluquería?", "¿cuál es vuestro nombre?"
 const NAME_QUESTION = /\b(como se llama(n)? (el centro|la peluqueria|el salon|el negocio|la tienda|esto|vuestro \w+|tu \w+)|como os llamais|cual es (el|vuestro) nombre|nombre del (centro|negocio|salon|local|peluqueria))\b/;
 
-const SERVICES_LIST = /\b(lista(r|me|nos|d|do)?( de)? (los |todos los |vuestros |tus )?(servicios|precios|tratamientos)|(que|cuales|cuantos) (servicios|tratamientos)( \w+){0,2} (teneis|tienes|haceis|haces|ofreceis|hay)|(todos )?(los|vuestros|tus) servicios|carta de servicios|catalogo|lista de precios|(teneis|tienes|hay) (una )?(lista|carta)|(teneis|tienes) precios|que (precios|tarifas) (teneis|tienes|hay))\b|^(y )?que (haceis|ofreceis)( (de|en) \w+)?$|\bque (haceis|ofreceis) (de|en) \w+/;
+const SERVICES_LIST = /^(los |todos los |vuestros |tus )?(servicios|tratamientos|lista|carta|catalogo)( porfa| por favor| please)?$|\b(lista(r|me|nos|d|do)?( de)? (los |todos los |vuestros |tus )?(servicios|precios|tratamientos)|(que|cuales|cuantos) (servicios|tratamientos)( \w+){0,2} (teneis|tienes|haceis|haces|ofreceis|hay)|(todos )?(los|vuestros|tus) servicios|carta de servicios|catalogo|lista de precios|(teneis|tienes|hay) (una )?(lista|carta)|(teneis|tienes) precios|que (precios|tarifas) (teneis|tienes|hay))\b|^(y )?que (haceis|ofreceis)( (de|en) \w+)?$|\bque (haceis|ofreceis) (de|en) \w+/;
 // Category asked about: "¿qué tratamientos faciales tenéis?", "precios de uñas"
 const SERVICE_CATEGORIES = [
   ['peluqueria', /\b(pelo|peluqueria|cortes?|peinados?)\b/],

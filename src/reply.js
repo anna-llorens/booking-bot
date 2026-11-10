@@ -322,6 +322,12 @@ function computeReply(message, state = newConversation(), {
         [null, 'book', 'reschedule'].includes(u.intent) && !u.date && !u.time) topic = 'services';
   }
 
+  // "precios de color", "precios de uñas": that category's price list (plural "precios" = a list)
+  if (u.category && /\b(precios|tarifas)\b/.test(t) && !u.date && !u.time && [null, 'book', 'price', 'services'].includes(u.intent)) topic = 'services';
+
+  // "tinte" right after "¿De qué servicio quieres saber el precio?": its price
+  if (state.lastQuestion === 'priceService' && u.service && !u.date && !u.time && [null, 'book', 'price'].includes(u.intent)) topic = 'price';
+
   // "las dos cosas" / "ambas" right after "¿Para X, Y o las dos cosas?"
   if (state.lastQuestion === 'service' && state.recentServices?.length > 1 && !u.service && u.intent !== 'price' &&
       /\b(las dos|los dos|ambas|ambos|las 2|todo|todas|las tres)\b/.test(t)) topic = 'book';
@@ -958,6 +964,11 @@ function computeReply(message, state = newConversation(), {
       const together = !u.details.length && /\b(todo|todos|junto|juntos|en total|las dos|los dos|ambos|ambas)\b/.test(t);
       const all = [...(state.pending.details ?? []), ...(state.recentServices ?? [])].filter((d, i, a) => a.findIndex(x => x.id === d.id) === i);
       const source = together && all.length > 1 ? { details: all } : u.details.length ? u : state.pending.details?.length ? state.pending : null;
+      // "precios" with no service at all: ask which one instead of handing it over
+      if (!source) {
+        state.lastQuestion = 'priceService'; state.proposals = [];
+        return out('¿De qué servicio quieres saber el precio? (por ejemplo, corte, tinte o manicura) Si quieres, te digo los precios de un tipo de servicio: «precios de uñas», «precios de color»…');
+      }
       const what = source ? ` de ${serviceLabel(source)}` : '';
       // Prices in the catalog: answer directly. Otherwise the owner answers.
       const priced = source?.details?.map(d => services.find(s => s.id === d.id)).filter(s => s && s.price != null) ?? [];

@@ -728,6 +728,10 @@
     {"text":"que precois teneis?","expected":{"intent":"services"},"source":"generated","note":"swapped letters in a key word"},
     {"text":"quiero cancelr la cita","expected":{"intent":"cancel"},"source":"generated","note":"typo in a key word"},
     {"text":"cual es el horaio","expected":{"intent":"hours"},"source":"generated","note":"typo in a key word"},
-    {"text":"mehcas el viernes","expected":{"intent":"book","service":"mechas","date":"2026-11-13"},"source":"generated","note":"swapped letters in a service"}
+    {"text":"mehcas el viernes","expected":{"intent":"book","service":"mechas","date":"2026-11-13"},"source":"generated","note":"swapped letters in a service"},
+    {"text":"servicios","expected":{"intent":"services"},"source":"test-ui"},
+    {"text":"servivios","expected":{"intent":"services"},"source":"test-ui"},
+    {"text":"los servicios porfa","expected":{"intent":"services"},"source":"test-ui"},
+    {"text":"precios","expected":{"intent":"price"},"source":"test-ui"}
   ]
 }
