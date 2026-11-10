@@ -367,8 +367,8 @@ function respondOwner(message, state = {}, options = {}) {
 
   function hoursOverview() {
     const lines = [`Tu horario: ${H.hoursSummary(business)}`];
-    const dates = (business.closedDates ?? []).map(c => (typeof c === 'string' ? { date: c } : c)).filter(c => c.date >= todayISO);
-    const ranges = (business.closedRanges ?? []).filter(r => r.to >= todayISO);
+    const dates = (business.closedDates ?? []).map(c => (typeof c === 'string' ? { date: c } : c)).filter(c => c.date >= todayISO).sort((x, y) => x.date.localeCompare(y.date));
+    const ranges = (business.closedRanges ?? []).filter(r => r.to >= todayISO).sort((x, y) => x.from.localeCompare(y.from));
     const overrides = Object.entries(business.dateOverrides ?? {}).filter(([d]) => d >= todayISO);
     if (dates.length) lines.push(`Cerrado: ${joinList(dates.map(c => `${dayName(c.date)}${c.reason ? ` (${c.reason})` : ''}`))}.`);
     if (ranges.length) lines.push(`Vacaciones y cierres: ${joinList(ranges.map(r => `${rangeText(r.from, r.to)}${r.reason ? ` (${r.reason})` : ''}`))}.`);

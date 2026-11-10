@@ -9,7 +9,8 @@
 //   POST /api/message      { businessId, phone, message, today? }   one customer message -> bot reply
 //   POST /api/reset        { businessId, phone }      new conversation (appointments are kept)
 //   POST /api/appointments { businessId, phone, today? }            gives her an appointment, for testing
-//   GET  /api/overview?businessId=&phone=              calendar, owner inbox, her messages
+//   GET  /api/overview?businessId=&phone=              calendar, owner inbox, her messages, settings, catalog,
+//                                                      owner-mode changes and whether this phone is in owner mode
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -18,6 +19,7 @@ const { seedDemoData } = require('../src/demo-data');
 const { handleMessage, resetConversation, makeIsFree, normalizePhone } = require('../src/bot');
 const { closedReason, DEFAULT_BUSINESS } = require('../src/reply');
 const { salonNow } = require('../src/timezone');
+const { hoursSummary } = require('../src/hours');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PAGE = path.join(__dirname, 'public', 'index.html');
@@ -202,7 +204,16 @@ const routes = {
     const phone = url.searchParams.get('phone');
     const from = toISODate(new Date(Date.now() - 86400000 * 30));
     const customer = phone && normalizePhone(phone) ? await store.findOrCreateCustomer(businessId, normalizePhone(phone)) : null;
+    const business = await store.getBusiness(businessId);
+    const state = customer ? (await store.getConversation(businessId, customer.id))?.state : null;
+    const isOwnerPhone = !!customer && (business.settings.ownerPhones ?? []).map(normalizePhone).includes(customer.phone);
+    const allowed = isOwnerPhone || business.settings.devOwnerLogin === true;
     return {
+      ownerMode: allowed && (state?.ownerMode ?? isOwnerPhone),
+      settings: business.settings,
+      hours: hoursSummary(business.settings),
+      services: await store.listServices(businessId, { includeInactive: true }),
+      ownerChanges: await store.listOwnerChanges(businessId, { limit: 10 }),
       appointments: await store.listAppointments(businessId, { from }),
       inbox: await store.listHandovers(businessId),
       waitlist: await store.listWaitlist(businessId),

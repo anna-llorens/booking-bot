@@ -8,11 +8,13 @@
   :root {
     --bg: #f4f2ee; --panel: #ffffff; --text: #1f2328; --muted: #6b7280; --border: #e3e0da;
     --me: #d9fdd3; --bot: #ffffff; --accent: #128c7e; --warn: #b45309; --code: #f6f8fa;
+    --owner: #7c3aed; --owner-me: #ede4ff;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0f1418; --panel: #182026; --text: #e6e6e6; --muted: #9aa4ad; --border: #2a343c;
       --me: #005c4b; --bot: #202c33; --accent: #25d366; --warn: #f59e0b; --code: #11171c;
+      --owner: #a78bfa; --owner-me: #3b2a63;
     }
   }
   * { box-sizing: border-box; }
@@ -53,11 +55,23 @@
   pre { background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 12px; overflow-x: auto; margin: 0; }
   details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 12px; }
   .empty { color: var(--muted); font-size: 14px; }
+  /* owner mode: another colour everywhere, so it is never confused with a customer chat */
+  #mode { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+  body.owner { --accent: var(--owner); --me: var(--owner-me); }
+  body.owner #mode { background: var(--owner); border-color: var(--owner); color: #fff; }
+  body.owner header { border-bottom: 3px solid var(--owner); }
+  .owner-only { display: none; }
+  body.owner .owner-only { display: block; }
+  ul.list li.off { text-decoration: line-through; color: var(--muted); }
+  #examples button.owner-example { display: none; }
+  body.owner #examples button { display: none; }
+  body.owner #examples button.owner-example { display: inline-block; }
 </style>
 </head>
 <body>
 <header>
   <h1>Booking Bot Tester</h1>
+  <span id="mode" title="Type login:owner to try owner mode (demo salons only), logout to leave it">Clienta</span>
   <label>Salon <select id="business"></select></label>
   <label title="The customer's WhatsApp number. Each number is a different customer, with her own appointments.">Customer
     <input id="phone" inputmode="tel" value="600000001">
@@ -79,6 +93,14 @@
     </form>
   </section>
   <aside>
+    <div class="owner-only">
+      <h2>Salon settings (live)</h2>
+      <div id="settings" class="empty">–</div>
+      <h2>Catalog</h2>
+      <ul id="catalog" class="list"><li class="empty">–</li></ul>
+      <h2>Owner changes</h2>
+      <ul id="changes" class="list"><li class="empty">–</li></ul>
+    </div>
     <h2>What the bot understood</h2>
     <div id="summary" class="empty">Nothing yet.</div>
     <h2>Salon calendar</h2>
@@ -95,7 +117,12 @@
   const EXAMPLES = [
     'Hola', 'quiero cita para un corte', 'el viernes por la tarde', 'la segunda',
     'tengo cita?', 'me la puedes cambiar al jueves?', 'cancela la cita', 'cuanto cuesta el tinte?',
-    'a que hora abris el sabado', 'dónde estáis?', 'lo de siempre el viernes',
+    'a que hora abris el sabado', 'dónde estáis?', 'lo de siempre el viernes', 'login:owner',
+  ];
+  const OWNER_EXAMPLES = [
+    '¿qué tengo hoy?', '¿cuántas citas tengo esta semana?', 'el jueves cierro', 'mañana abro a las 10',
+    'sube el tinte a 38', 'apunta a Lucía mañana a las 10 para corte', '¿qué me han preguntado?', 'sí', 'no',
+    'deshacer', 'ayuda', 'logout',
   ];
   const $ = id => document.getElementById(id);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -124,10 +151,11 @@
     const u = turn.understanding;
     const rows = [
       ['Intent', u.intent ?? 'none'],
-      ['Service', u.details.length ? u.details.map(d => `${d.name} (${d.duration ?? '?'} min)`).join(', ') : u.service],
+      ...(turn.owner ? [['Changes applied', turn.changes?.length ? turn.changes.map(c => c.summary ?? c.type).join('; ') : null]] : []),
+      ['Service', u.details?.length ? u.details.map(d => `${d.name} (${d.duration ?? '?'} min)`).join(', ') : u.service],
       ['Date', u.date ? new Date(u.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : null],
       ['Time of day', u.timeOfDay], ['Time', u.time], ['Option', u.option],
-      ['Missing', u.missing.length ? u.missing.join(', ') : null],
+      ['Missing', u.missing?.length ? u.missing.join(', ') : null],
       ['Normalized', u.normalizedText],
     ];
     const dl = el('dl', 'summary');
@@ -143,7 +171,7 @@
     const node = el('div', `msg ${cls}`, text);
     if (turn) {
       if (turn.handover) node.classList.add('handover');
-      node.append(el('span', 'tag', turn.handover ? `→ owner inbox · ${turn.understanding.intent ?? 'not understood'}` : `intent: ${turn.understanding.intent}`));
+      node.append(el('span', 'tag', turn.handover ? `→ owner inbox · ${turn.understanding.intent ?? 'not understood'}` : `${turn.owner ? 'modo dueña · ' : ''}intent: ${turn.understanding.intent}`));
       node.onclick = () => show(turn, node);
     }
     box.append(node);
@@ -154,6 +182,8 @@
   async function refreshPanels() {
     const { businessId, phone } = who();
     const o = await api('GET', `/api/overview?businessId=${encodeURIComponent(businessId)}&phone=${encodeURIComponent(phone)}`);
+    setMode(o.ownerMode);
+    renderOwnerPanels(o);
     const cal = $('calendar'); cal.replaceChildren();
     if (!o.appointments.length) cal.append(el('li', 'empty', 'No appointments.'));
     for (const a of o.appointments) {
@@ -175,6 +205,42 @@
       const li = el('li', null, what || 'any slot'); li.append(el('div', 'sub', w.phone)); wl.append(li);
     }
     return o;
+  }
+
+  function setMode(owner) {
+    document.body.classList.toggle('owner', !!owner);
+    $('mode').textContent = owner ? 'Modo dueña' : 'Clienta';
+    $('input').placeholder = owner ? 'e.g. ¿qué tengo hoy? · el jueves cierro · sube el tinte a 38' : 'e.g. tienes hueco mañana por la tarde para un corte?';
+  }
+
+  // Owner mode panels: the settings and catalog as they are now, and the last changes
+  function renderOwnerPanels(o) {
+    const s = o.settings ?? {};
+    const dl = el('dl', 'summary');
+    const dates = (s.closedDates ?? []).map(c => (typeof c === 'string' ? c : `${c.date} (${c.reason})`));
+    const rows = [
+      ['Hours', o.hours],
+      ['Closed days', dates.join(', ') || null],
+      ['Closed ranges', (s.closedRanges ?? []).map(r => `${r.from} → ${r.to}${r.reason ? ` (${r.reason})` : ''}`).join(', ') || null],
+      ['Special hours', Object.entries(s.dateOverrides ?? {}).map(([d, i]) => `${d}: ${i.map(x => x.join('–')).join(', ') || 'closed'}`).join(' · ') || null],
+      ['Owner phones', (s.ownerPhones ?? []).join(', ') || null],
+      ['Test login', s.devOwnerLogin ? 'login:owner on (testing only)' : 'off'],
+    ];
+    for (const [k, v] of rows) dl.append(el('dt', null, k), el('dd', null, v ?? '–'));
+    dl.id = 'settings'; $('settings').replaceWith(dl);
+    const cat = $('catalog'); cat.replaceChildren();
+    for (const sv of o.services ?? []) {
+      const li = el('li', sv.active ? null : 'off', `${sv.name} · ${sv.duration ?? '?'} min · ${sv.price != null ? `${sv.price} €` : 'no price'}`);
+      if (!sv.active) li.title = 'Not offered (turned off from owner mode)';
+      cat.append(li);
+    }
+    const ch = $('changes'); ch.replaceChildren();
+    if (!o.ownerChanges?.length) ch.append(el('li', 'empty', 'No changes yet.'));
+    for (const c of o.ownerChanges ?? []) {
+      const li = el('li', c.undoneAt ? 'off' : null, c.data?.summary ?? c.type);
+      li.append(el('div', 'sub', `${c.type} · ${new Date(c.createdAt).toLocaleString('en-GB')}${c.undoneAt ? ' · undone' : ''}`));
+      ch.append(li);
+    }
   }
 
   // Shows this customer's saved history when switching salon or customer
@@ -221,9 +287,11 @@
   };
   $('business').onchange = loadCustomer;
   $('phone').onchange = loadCustomer;
-  for (const ex of EXAMPLES) {
-    const b = el('button', null, ex); b.type = 'button'; b.onclick = () => send(ex);
-    $('examples').append(b);
+  for (const [list, cls] of [[EXAMPLES, null], [OWNER_EXAMPLES, 'owner-example']]) {
+    for (const ex of list) {
+      const b = el('button', cls, ex); b.type = 'button'; b.onclick = () => send(ex);
+      $('examples').append(b);
+    }
   }
 
   (async () => {

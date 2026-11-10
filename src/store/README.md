@@ -11,7 +11,8 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 | `listBusinesses()` | `[{ id, name, settings, createdAt }]` |
 | `getBusiness(id)` | business or `null` |
 | `saveBusiness({ id, name, settings })` | the business (insert or update) |
-| `listServices(businessId)` | active services: `[{ id, group, category, name, duration, price, synonyms, active }]` |
+| `listServices(businessId, { includeInactive = false })` | active services (or all, for owner mode): `[{ id, group, category, name, duration, price, synonyms, active, description }]` |
+| `updateService(businessId, id, { price?, duration?, active? })` | the service, or `null` |
 | `saveServices(businessId, services)` | replaces the salon's whole catalog |
 
 ## Customers
@@ -19,6 +20,7 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 | Method | Returns |
 |---|---|
 | `findOrCreateCustomer(businessId, phone)` | `{ id, businessId, phone, name, createdAt, lastSeenAt }` — `phone` already normalized (`bot.normalizePhone`) |
+| `findOrCreateManualCustomer(businessId, name)` | a customer with no phone, booked by the owner (phone `manual:<name>`, one per name) |
 | `updateCustomer(businessId, customerId, { name })` | — |
 | `deleteCustomer(businessId, customerId)` | — removes her and everything about her (GDPR erasure) |
 
@@ -27,6 +29,7 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 | Method | Returns |
 |---|---|
 | `listAppointments(businessId, { from?, to?, status = 'booked' })` | `[{ id, customerId, service, name, details, date, time, duration, status, … }]` by date and time |
+| `listAgenda(businessId, { from?, to?, status = 'booked' })` | like `listAppointments`, plus `customerName` and `customerPhone` (owner mode) |
 | `getUpcomingAppointment(businessId, customerId, fromDate)` | her next booked appointment from that day, or `null` |
 | `listCustomerAppointments(businessId, customerId, fromDate)` | all her booked appointments from that day, soonest first |
 | `getLastAppointment(businessId, customerId, beforeDate)` | her most recent past appointment (for "lo de siempre"), or `null` |
@@ -53,6 +56,15 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 | `closeHandover(businessId, id)` | — |
 | `addToWaitlist({ businessId, customerId, service, details, date, timeOfDay, earlier })` | — |
 | `listWaitlist(businessId, { status = 'waiting' })` | oldest first, with the customer's `phone` |
+
+## Owner-mode changes
+
+| Method | Returns |
+|---|---|
+| `addOwnerChange({ businessId, type, data, previous })` | the new change's `id` |
+| `getLastOwnerChange(businessId)` | the newest change not undone yet, or `null` |
+| `listOwnerChanges(businessId, { limit = 20 })` | newest first, with `undoneAt` |
+| `markOwnerChangeUndone(businessId, id)` | — |
 
 ## Schema changes
 

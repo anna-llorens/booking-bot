@@ -72,6 +72,7 @@ All tables (except `businesses`) have `business_id`; every query filters by it. 
 | `messages` | `id` | `customer_id`, `direction` (`in` / `out`), `text`, `intent` |
 | `handovers` | `id` | the owner's inbox: `customer_id`, `message`, `reason`, `status` (`open` / `done`) |
 | `waitlist` | `id` | `customer_id`, `service`, `details`, `date`, `time_of_day`, `earlier`, `status` (`waiting` / `notified` / `done`) |
+| `owner_changes` | `id` | what the owner changed from owner mode: `type` (`closeDate`, `setPrice`, `bookManual`…), `data` (JSON: the change as applied), `previous` (JSON: the value it replaced, to undo it), `created_at`, `undone_at` |
 
 ### Salon settings (`businesses.settings`)
 
@@ -84,6 +85,9 @@ All tables (except `businesses`) have `business_id`; every query filters by it. 
   "capacity": 1,                // appointments that may overlap (chairs / staff)
   "closedDates": ["2026-12-08"],                                          // public holidays
   "closedRanges": [{ "from": "2027-08-09", "to": "2027-08-22", "reason": "vacaciones" }],
+  "dateOverrides": { "2026-11-11": [["10:00", "20:00"]] },               // hours for one day (owner mode)
+  "ownerPhones": ["34600111222"],   // these numbers get owner mode
+  "devOwnerLogin": false,           // TESTING ONLY: "login:owner" enters owner mode from any phone
   "minNoticeMinutes": 120,      // nothing starts sooner than now + 2 h
   "maxDaysAhead": 60,           // the diary is open 60 days ahead
   "address": "Carrer Major 12, Barcelona",
@@ -106,7 +110,7 @@ Everything the bot needs from storage is in [src/store/README.md](../src/store/R
 
 ### Migrations
 
-`MIGRATIONS` in `src/store/sqlite-store.js` is a list of SQL scripts. On start, the store runs the ones not applied yet (tracked in SQLite's `user_version`), each in a transaction. **Never edit an applied migration; add a new one.** Current: 1 schema, 2 waiting list, 3 phones in international format, 4 appointment notes, 5 service descriptions.
+`MIGRATIONS` in `src/store/sqlite-store.js` is a list of SQL scripts. On start, the store runs the ones not applied yet (tracked in SQLite's `user_version`), each in a transaction. **Never edit an applied migration; add a new one.** Current: 1 schema, 2 waiting list, 3 phones in international format, 4 appointment notes, 5 service descriptions, 6 `owner_changes` (owner mode).
 
 ## Availability
 
@@ -121,6 +125,54 @@ Not modelled yet: staff and which staff member does which service. They would go
 ## Conversations
 
 The conversation state (what the bot just asked, the times it proposed, the booking being built, services she asked prices for, the waiting list…) is plain JSON, stored per customer. It starts fresh after `CONVERSATION_TIMEOUT_HOURS` (8) without messages. Her appointments are not part of it: they are loaded from `appointments` on every message, so the database is always the source of truth.
+
+## Owner mode ("modo dueña")
+
+The salon owner manages the salon from the same WhatsApp chat: agenda, closures, opening hours, prices, services and appointments.
+
+```
+ owner message ──► bot.js handleOwner() ──► src/owner/reply-owner.js ──► src/owner/understand-owner.js
+                        │   (applies the            (pure: answer +            (pure: intent + fields; reuses
+                        │    confirmed changes)      changes to confirm)        understand.js dates, times, services)
+                        ▼
+                  store: businesses.settings, services, appointments, owner_changes
+```
+
+**Who is the owner.**
+- A phone in `settings.ownerPhones` (e.g. `["34600111222"]`) is in owner mode directly. It writes *modo clienta* to try the bot as a customer and *modo dueña* to go back.
+- `login:owner` (any case) enters owner mode from any phone, but only if `settings.devOwnerLogin` is `true`. **This is for testing only**: it is on in the two demo salons and off by default. With it off, `login:owner` is an ordinary customer message.
+- `logout` or `salir` leaves owner mode.
+- The mode is kept in the conversation state (`ownerMode`); the owner's own state (what is waiting for confirmation) is in `state.owner`.
+
+**Same split as the customer bot.**
+- `understand-owner.js` and `reply-owner.js` are pure.
+- `reply-owner.js` never changes anything: it returns `{ reply, state, changes }`, and `changes` is only non-empty after the owner confirms.
+- `bot.js` applies each change and records it in `owner_changes`.
+
+**Every change asks first:** "¿Cierro el jueves 12 de noviembre? (sí / no)". Queries (agenda, inbox, prices) don't ask. Anything doubtful is not applied: missing data is asked for ("¿A qué hora?"), and anything not understood gets "No te he entendido 😅 Escribe *ayuda* para ver ejemplos."
+
+**Appointments are never cancelled by a closure or an hours change.** Before confirming, the bot lists the appointments affected and says "Las citas NO se cancelan solas…"; the owner cancels or moves them herself.
+
+**Undo.** `deshacer` reverts the last change not undone yet (and again for the one before):
+- Settings changes store the previous value of each key they replace (`null` = the key did not exist).
+- Catalog changes store the previous price, duration or `active` flag.
+- A manual booking is undone by cancelling it, a cancellation by booking it again, and a move by moving it back.
+
+| Intent | Example | Effect |
+|---|---|---|
+| `agenda` | "¿qué tengo hoy?", "citas de mañana", "¿cuántas citas tengo esta semana?" | Time, customer, service and duration; a day ends with its free stretches |
+| `inbox`, `waitlist` | "¿qué me han preguntado?", "¿quién hay en lista de espera?" | Open handovers; the waiting list |
+| `hours` | "¿qué horario tengo?" | Weekly hours, upcoming closures and special days |
+| `closeDate`, `closeRange`, `openDate` | "el jueves cierro", "cierro del 10 al 24 de agosto por vacaciones", "al final el jueves abro" | `closedDates`, `closedRanges` (re-opening a day inside a range splits it) |
+| `setDayHours` | "mañana abro a las 10", "el viernes de 10 a 14" | `dateOverrides` for that day |
+| `setWeeklyHours` | "a partir de ahora los sábados cierro a las 14", "los lunes ya no abro" | `hours` (written out in full if the salon still used `opens`/`closes`) |
+| `getPrice`, `setPrice`, `getDuration`, `setDuration` | "¿cuánto cobro por las mechas?", "sube el tinte a 38", "el tinte dura 2 horas" | The service's `price` / `duration` |
+| `disableService`, `enableService` | "ya no hago permanente", "vuelvo a hacer permanente" | The service's `active` flag (inactive services are not offered to customers) |
+| `bookManual` | "apunta a Lucía mañana a las 10 para corte" | An appointment for a customer with no phone (one per name, phone `manual:lucia`); a taken time offers others |
+| `cancelAppointment`, `moveAppointment` | "cancela la cita de Ana del jueves", "mueve la de las 17:00 del viernes a las 18:00" | Asks which one if several match. The customer is not messaged: the owner tells her |
+| `help`, `yes`, `no`, `undo`, `logout` | "ayuda", "sí", "no", "deshacer", "salir" | — |
+
+`settings.dateOverrides` (`{ "2026-11-11": [["10:00","20:00"]] }`) wins over the weekly hours for that one day. It is read in `hours.dayHours()`, so free slots, `closedReason` and the customer's hours answers all respect it.
 
 ## Plugging in WhatsApp
 

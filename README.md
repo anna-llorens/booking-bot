@@ -34,6 +34,7 @@ Open http://localhost:3000 after `npm start`.
 - **Today is**: follows the real clock; change it to pretend the conversation happens on another day. **Now** goes back to the real clock.
 - **Add existing appointment**: gives this customer an appointment, to try moving, cancelling or checking it.
 - **New conversation**: forgets the conversation (her appointments are kept).
+- **Owner mode**: type `login:owner` (demo salons only) to act as the salon owner. The header shows a purple **Modo dueña** label, the examples change, and the panel adds the salon's live settings, its catalog (services turned off are struck through) and the owner's changes. `logout` goes back to the customer. See [owner mode](docs/architecture.md#owner-mode-modo-dueña).
 - **Right panel**: what the engine understood (click any bot reply to inspect that turn), the salon calendar, the owner's inbox, the waiting list, the conversation state and the raw result.
 
 The terminal shows every message handed to the owner and why. Messages the bot couldn't handle are also saved to `private-data/not-understood.json` (see [the phrase bank](#improving-it-the-phrase-bank)).
@@ -57,6 +58,12 @@ WhatsApp / test UI ──► server/index.js ──► src/bot.js ──► src/
 | Application | `src/bot.js` | Loads everything for one message, calls `reply.js`, saves the result (appointment, conversation, messages, handover, waiting list) | Decide what to answer |
 | Storage | `src/store/` | Keeps the data, separated by salon | Contain any bot logic |
 | Delivery | `server/` | HTTP API and the test UI | — |
+
+**Owner mode.** When the salon owner writes (a number in `settings.ownerPhones`, or `login:owner` in the demo salons), `src/owner/` answers instead of the customer bot.
+- She can see her agenda ("¿qué tengo hoy?"), close days ("el jueves cierro"), change hours ("mañana abro a las 10"), prices ("sube el tinte a 38") and services ("ya no hago permanente"), and book, cancel or move appointments ("apunta a Lucía mañana a las 10 para corte").
+- Every change asks "(sí / no)" first and can be reverted with `deshacer`.
+- Appointments are never cancelled on their own: the bot warns about the ones affected.
+- Details are in [docs/architecture.md](docs/architecture.md#owner-mode-modo-dueña).
 
 Every table is keyed by salon: a salon never sees another salon's customers. See [docs/architecture.md](docs/architecture.md) for the data model, the store interface, migrations, availability and how to plug in WhatsApp.
 
@@ -140,6 +147,9 @@ Each salon's settings live in `businesses.settings` (JSON). Anything left out ta
 | `closedWeekdays` | `[0]` | Used only when there is no `hours`: weekly days off (0 = Sunday … 6 = Saturday) |
 | `closedDates` | `[]` | Public holidays: `"2026-12-08"` or `{ "date": "2026-12-26", "reason": "Sant Esteve" }` |
 | `closedRanges` | `[]` | Holidays or other closures: `{ "from": "2026-08-10", "to": "2026-08-24", "reason": "vacaciones" }` |
+| `dateOverrides` | `{}` | Different hours for one day: `{ "2026-11-11": [["10:00","20:00"]] }` (set from owner mode: "mañana abro a las 10") |
+| `ownerPhones` | `[]` | Numbers that get owner mode instead of the customer bot |
+| `devOwnerLogin` | `false` | **Testing only.** `login:owner` enters owner mode from any phone. On in the demo salons |
 | `slotMinutes` | `30` | Proposals start every 30 minutes |
 | `maxProposals` | `2` | Times offered at once |
 | `capacity` | `1` | Appointments that may overlap (chairs / staff) |
@@ -184,7 +194,7 @@ A complete example:
 }
 ```
 
-The two demo salons in `src/demo-data.js` have examples of all of these: the hair salon has split hours and Saturday mornings, the beauty center continuous hours (and leaves `parking` empty, so that question goes to the owner). Their settings are refreshed from the code on every start; real salons are never touched.
+The two demo salons in `src/demo-data.js` have examples of all of these: the hair salon has split hours and Saturday mornings, the beauty center continuous hours (and leaves `parking` empty, so that question goes to the owner). Their settings are refreshed from the code on every start (unless they were changed from owner mode); real salons are never touched.
 
 ## Data and privacy
 
@@ -234,16 +244,19 @@ Labelling tips: not every "vale" is `confirm` (it can be `undecided`, or the ans
 | `test/reply.test.js` | Short scripted conversations through `respond()` |
 | `test/conversations.test.js` + `test/fixtures/conversations.json` | 43 whole conversations, optionally with salon settings: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
 | `test/store.test.js` | Database and `bot.js` end to end on an in-memory SQLite: salons kept apart, no double booking, moves update, cancel asks first, "lo de siempre" from history, phone formats, holidays, notes, GDPR delete |
+| `test/owner.test.js` + `test/fixtures/owner-phrases.json` | Owner mode: 88 phrases, and whole conversations through `bot.js` (login, confirm, undo, warnings, what customers see after a change) |
 
-`npm test` runs all four.
+`npm test` runs all five.
 
 ## Project layout
 
 | Path | Contents |
 |---|---|
 | `src/understand.js` | The engine: one message → what she said |
-| `src/reply.js` | The conversation: what to answer (pure function) |
-| `src/bot.js` | One message in, one reply out, everything saved |
+| `src/reply.js`, `src/reply/` | The conversation: what to answer (pure). `context.js`, `rules.js`, one handler file per intent group |
+| `src/bot.js` | One message in, one reply out, everything saved; applies owner-mode changes |
+| `src/owner/` | Owner mode: `understand-owner.js` and `reply-owner.js` (pure) |
+| `src/hours.js`, `src/timezone.js` | Opening hours (split days, per-day overrides) and the salon's wall-clock time |
 | `src/store/` | Storage (SQLite) and its interface ([README](src/store/README.md)) |
 | `src/catalog.json` | Sample catalog: 112 services with Spanish synonyms and durations |
 | `src/demo-data.js` | The two demo salons, with sample prices |
@@ -261,5 +274,5 @@ Labelling tips: not every "vale" is `confirm` (it can be `undecided`, or the ans
 - **One person, one appointment per conversation.** "Para mi hija" is booked as if it were for whoever writes, and two appointments in one chat (mother and daughter) aren't supported: it needs a "who is it for" field.
 - **One option at a time:** "el jueves por la tarde, si no el viernes por la mañana" moves from Thursday to Friday instead of offering both.
 - **No staff per service:** availability is per salon, with a `capacity` of parallel appointments.
-- **No owner interface** beyond the test UI's inbox; the waiting list is recorded but nobody is notified automatically when a slot frees up.
+- **Owner mode is text only.** The owner manages hours, closures, prices and appointments from the chat; there is no web dashboard. Cancelling or moving an appointment doesn't message the customer (the owner tells her), and the waiting list is not notified automatically when a slot frees up.
 - The demo prices are examples; durations are typical estimates to confirm with each salon.
