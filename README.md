@@ -187,6 +187,19 @@ The two demo salons in `src/demo-data.js` have examples of all of these (the bea
 
 ## Improving it: the phrase bank
 
+There are two sets of labeled phrases:
+
+| File | What it is for | In `npm test` |
+|---|---|---|
+| `test/fixtures/phrases.json` (bank) | Phrases the rules are tuned on. Every failure gets fixed. | Must be 100 %: a failure fails the build |
+| `test/fixtures/holdout.json` (holdout) | Phrases the rules are **not** tuned on: the honest measure of how well it understands messages it hasn't seen | Reported, never fails the build |
+
+**Holdout rule: holdout phrases are never used to tune rules.** Don't read them to write or adjust a rule. If a general rule written for other reasons happens to fix one, fine. Phrases go to the holdout by a hash of their text (`scripts/holdout.js`), never by hand: `npm run merge` sends 20 % of new phrases there (`--holdout-share 0.2`).
+
+The current holdout (53 phrases moved from the bank) had already been used for tuning, so its 100 % is not an honest figure; it becomes one as new phrases arrive through `npm run merge`. The honest figures so far are the "before" measurements of each new batch: 59 % and 48 % on the first real chats, 8/22 on a batch of new phrases, 27/51 on synthetic conversations.
+
+### Adding phrases
+
 The rules are only as good as the real messages they have been tested on.
 
 ```bash
@@ -194,7 +207,7 @@ The rules are only as good as the real messages they have been tested on.
 node scripts/import-whatsapp.js private-data/chat.txt "Business name" --dmy > new-phrases.txt
 # 2. Or take what the test UI couldn't handle: private-data/not-understood.json
 # 3. Fill in "expected" on each line, then:
-npm run merge new-phrases.txt        # skips lines without "expected"
+npm run merge new-phrases.txt        # skips lines without "expected"; 20 % go to the holdout
 npm test
 ```
 
@@ -202,13 +215,13 @@ Each phrase: `{ "text": "...", "expected": { "intent": "book", "date": "2026-11-
 
 Labelling tips: not every "vale" is `confirm` (it can be `undecided`, or the answer to a question: add `context`); keep some `intent: null` examples ("gracias", "jajaja", "ahora te digo" must not book anything).
 
-**The accuracy that matters** is on phrases the rules have never seen: on the first real chats it was 59 % and 48 % before tuning; on a batch of 22 new phrases, 8/22 before and 22/22 after. After each tuning round the whole bank passes.
+**The accuracy that matters** is on phrases the rules have never seen: the holdout from now on, and the "before" measurements of each batch so far.
 
 ## Tests
 
 | File | Checks |
 |---|---|
-| `test/understand.test.js` + `test/fixtures/phrases.json` | 727 single messages (intent, topic, service, date, time…) |
+| `test/understand.test.js` + `test/fixtures/phrases.json` + `holdout.json` | Single messages (intent, topic, service, date, time…): the bank must pass 100 %, the holdout is only reported |
 | `test/reply.test.js` | Short scripted conversations through `respond()` |
 | `test/conversations.test.js` + `test/fixtures/conversations.json` | 43 whole conversations, optionally with salon settings: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
 | `test/store.test.js` | Database and `bot.js` end to end on an in-memory SQLite: salons kept apart, no double booking, moves update, cancel asks first, "lo de siempre" from history, phone formats, holidays, notes, GDPR delete |

@@ -1,42 +1,55 @@
 // understand.test.js — Measures how many phrases understand.js gets right.
-// Usage: npm test                          (summary + failures)
-//        node test/understand.test.js --all (also prints the ones it gets right)
+//
+//   Bank    (test/fixtures/phrases.json): phrases the rules are tuned on. Every one must pass: a failure fails the build.
+//   Holdout (test/fixtures/holdout.json): phrases the rules are NOT tuned on (never write rules looking at them).
+//            Informative only: it is the honest number for "how well does it understand new messages".
+//
+// Usage: npm test                            (summary + failures)
+//        node test/understand.test.js --all  (also prints the ones it gets right)
 const { understand } = require('../src/understand');
-const { today, phrases } = require('./fixtures/phrases.json');
+const bank = require('./fixtures/phrases.json');
+const holdout = require('./fixtures/holdout.json');
 
-const reference = new Date(today);
 const showAll = process.argv.includes('--all');
 const fmt = d => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : null;
 
-let ok = 0;
-const failuresByField = {};
-const failuresBySource = {};
-const totalBySource = {};
+function run({ today, phrases }) {
+  const reference = new Date(today);
+  const results = phrases.map(({ text, expected, source = 'unknown', today: phraseToday, context }) => {
+    const r = understand(text, { today: phraseToday ? new Date(phraseToday) : reference, context });
+    const actual = { ...r, date: fmt(r.date) };
+    const errors = Object.keys(expected).filter(k => JSON.stringify(actual[k] ?? null) !== JSON.stringify(expected[k]))
+      .map(k => `${k}: expected ${JSON.stringify(expected[k])}, got ${JSON.stringify(actual[k] ?? null)}`);
+    return { text, source, errors };
+  });
+  return { results, ok: results.filter(r => !r.errors.length).length, total: results.length };
+}
 
-for (const { text, expected, source = 'unknown', today: phraseToday, context } of phrases) {
-  const r = understand(text, { today: phraseToday ? new Date(phraseToday) : reference, context });
-  const actual = { ...r, date: fmt(r.date) };
-  const errors = Object.keys(expected).filter(k => JSON.stringify(actual[k] ?? null) !== JSON.stringify(expected[k]));
-  totalBySource[source] = (totalBySource[source] || 0) + 1;
-
-  if (errors.length === 0) {
-    ok++;
-    if (showAll) console.log(`✓ ${text}`);
-  } else {
-    failuresBySource[source] = (failuresBySource[source] || 0) + 1;
-    errors.forEach(k => failuresByField[k] = (failuresByField[k] || 0) + 1);
-    console.log(`✗ ${text}`);
-    errors.forEach(k => console.log(`    ${k}: expected ${JSON.stringify(expected[k])}, got ${JSON.stringify(actual[k] ?? null)}`));
+function print(results) {
+  for (const r of results) {
+    if (!r.errors.length) { if (showAll) console.log(`✓ ${r.text}`); continue; }
+    console.log(`✗ ${r.text}`);
+    r.errors.forEach(e => console.log(`    ${e}`));
   }
 }
 
-const pct = (ok / phrases.length * 100).toFixed(1);
-console.log(`\nAccuracy: ${ok}/${phrases.length} (${pct} %)`);
-console.log('Failures by field:', failuresByField);
-console.log('By source:');
-for (const s of Object.keys(totalBySource)) {
-  const f = failuresBySource[s] || 0;
-  console.log(`  ${s}: ${totalBySource[s] - f}/${totalBySource[s]}`);
+// Bank
+const b = run(bank);
+print(b.results);
+const bySource = {};
+for (const r of b.results) {
+  bySource[r.source] = bySource[r.source] ?? { ok: 0, total: 0 };
+  bySource[r.source].total++;
+  if (!r.errors.length) bySource[r.source].ok++;
+}
+console.log(`\nBank: ${b.ok}/${b.total} (${(b.ok / b.total * 100).toFixed(1)} %)`);
+console.log('By source:', Object.entries(bySource).map(([s, c]) => `${s} ${c.ok}/${c.total}`).join(', '));
+
+// Holdout (informative)
+const h = run(holdout);
+if (h.total) {
+  console.log(`\nHoldout (not tuned on, informative): ${h.ok}/${h.total} (${(h.ok / h.total * 100).toFixed(1)} %)`);
+  print(h.results);
 }
 
-process.exitCode = phrases.length - ok ? 1 : 0;
+process.exitCode = b.ok === b.total ? 0 : 1;
