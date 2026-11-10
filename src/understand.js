@@ -81,7 +81,7 @@ const INTENTS = [
   ['check', /^(las |mis |ver |ver las |ver mis )?(citas|reservas)( porfa| por favor| please)?$|^(ver |ensename |dime |cuales son |cuales son |consultar )?(mis|las mis) (citas|reservas)\b|\b(que|cuantas) (citas|reservas) tengo\b|\bmis (citas|reservas)\b/],
   ['check', /^(y )?(tengo|tenia|tendria) (alguna |una )?(citas?|horas?|algo (apuntado|reservado))( (para )?(hoy|manana|pasado manana|esta semana|el \w+( \d{1,2})?))?$/],
   ['check', /\b(a que hora (tengo|era|voy|tenia|tiene)|cuando (tenia|tengo|era)|que dia (tenia|tengo|era)|tenia (cita|hora)|me recuerdas|me podeis recordar|tengo (cita|hora) .*verdad|tengo algo apuntado|sigue en pie|si tengo (cita|hora|reservad\w*)|no recuerdo|me lo podeis mirar|cuando tengo|habiamos quedado|me disteis|me dieron|sigo teniendo|sigue reservad\w*|me confirmais si|si tengo cita)\b/],
-  ['hours', /\b(horarios?|a que hora (abr|cerr)\w*|hasta que hora|abiert[oa]s?|cerrad[oa]s?|abr(is|en|e|iran|ireis)|cerrais|trabaj(ais|an)|(estais|seguis|esta) trabajando|descans\w*|todavia estais|seguis abiertos|estais ahi|a que hora (empez|termin|acab)\w*)\b/],
+  ['hours', /\b(horarios?|a que hora (abr|cerr)\w*|hasta que hora|abiert[oa]s?|cerrad[oa]s?|abr(is|en|e|iran|ireis)|cerrais|trabaj(ais|an)|(estais|seguis|esta) trabajando|descans\w*|todavia estais|seguis abiertos|a que hora (empez|termin|acab)\w*)\b/],
   ['price', /\b(precios?|tarifas?|cuanto|cuantos|a cuanto|cobr\w+|caro|barato|cuest\w*|coste|costaria)\b/],
   ['late', /\bllegare (sobre|a las|en)\b|\bllego (en \d+|tarde)\b|\bvoy (con|un poco de) retraso\b|\bme retraso\b|\bvoy de camino\b|\b(voy|vamos) a llegar (un )?(poco |poquito |pelin |pelito |algo )?tarde\b|\b(ya )?(estoy|voy) llegando\b|\b(como|unos|sobre) \d+ (min\w*)\b|\bminut(illos|itos)\b|\bllegare (unos |como )?\d+ min\w*|\b(voy|ire|llego|vamos) (un poco |muy |algo )?(justa|justo|justas|apurada|con prisa)\b|\bhay (mucho|un monton de) trafico\b|\b(estoy|voy) (en un|en el) atasco\b|\bno encuentro aparcamiento\b/],
   ['choose', CHOOSE],
@@ -91,7 +91,7 @@ const INTENTS = [
   // compliments go before 'book' so "me gustó mucho el color" is not read as asking for a tinte
   ['thanks', /\b(me (gusto|gustaron|encanto|encantaron) (mucho|muchisimo|un monton)|me (encanta|encantan|ha encantado|han encantado)|sois (las|los|unas|unos) mejores|(quede|estoy|he quedado) (encantada|muy contenta|contentisima)|que bien me (dejaste|dejasteis|quedo|ha quedado))\b/],
   ['book', /^(el |mi )?pelo$|^peluqueria$|\b(cita|hora|reserv\w*|pedir|quer\w*|quier\w*|quisiera|necesit\w*|hueco|huecos|huequito|huequillo|sitio|libre|puedo ir|lo de siempre|lo mismo|me atiend\w*|me apunt\w*|me coge\w*|cogerme|apuntar\w*|concertar|me gustaria|hacerme|ponerme|(que|cuando) (dia )?tienes|para el fin de semana)\b/],
-  ['greeting', /^(muy )?(hol+a+|buenas|buenos dias|buenas tardes|buenas noches|ey)\b|^(y )?(que tal|como (estas|estais|esta|va|vais|te va|os va|andas|andais)|todo bien|(estas|estais|esta usted) bien|que tal (estas|estais|todo|va))\b/],
+  ['greeting', /^(muy )?(hol+a+|buenas|buenos dias|buenas tardes|buenas noches|ey)\b|^(y )?(que tal|como (estas|estais|esta|va|vais|te va|os va|andas|andais)|todo bien|(estas|estais|esta usted) bien|que tal (estas|estais|todo|va))\b|^(hola )?(estas|estais|esta usted|hay alguien|alguien|me (lees|oyes|leeis))( (ahi|por ahi|ahora))?$/],
   ['thanks', /\b(gracias|grax|mil gracias|muy amable|que amable)\b/],
 ];
 

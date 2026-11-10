@@ -32,7 +32,9 @@ function handleGreeting(ctx) {
     useRecentServices, firstFreeDay, nextStep, moreTimes, cancelAppointment, book } = ctx;
   {
     const smallTalk = /\b(que tal|como (estas|estais|esta|va|vais|te va|os va|andas|andais)|todo bien|(estas|estais|esta usted) bien)\b/.test(t);
-    const hello = smallTalk ? '¡Muy bien, gracias! 😊' : '¡Hola! 😊';
+    // "¿estás?", "¿hay alguien?", "¿me lees?": she wants to know someone is there
+    const present = /^(hola )?(estas|estais|esta usted|hay alguien|alguien|me (lees|oyes|leeis))( (ahi|por ahi|ahora))?$/.test(t);
+    const hello = present ? '¡Sí, aquí estoy! 😊' : smallTalk ? '¡Muy bien, gracias! 😊' : '¡Hola! 😊';
     // in the middle of a booking: answer and carry on with it
     if (BOOKING_QUESTIONS.includes(state.lastQuestion) && state.pending.service) {
       const step = nextStep();

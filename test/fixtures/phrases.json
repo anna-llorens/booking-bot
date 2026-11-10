@@ -714,6 +714,12 @@
     {"text":"en que consiste?","expected":{"intent":null},"today":"2026-11-10T14:57:00","context":{"lastQuestion":"proposal","proposals":["10:30","18:00"]},"source":"test-ui","note":"reply.js: the service's description, or the stylist"},
     {"text":"citas","expected":{"intent":"check"},"today":"2026-11-10T15:00:00","context":{"hasAppointment":true},"source":"test-ui"},
     {"text":"citas","expected":{"intent":"check"},"today":"2026-11-10T15:02:00","context":{"lastQuestion":"proposal","proposals":["18:00","19:30"],"hasAppointment":true},"source":"test-ui"},
-    {"text":"estais muy ocupados","expected":{"intent":null},"today":"2026-11-10T15:04:00","context":{"hasAppointment":true},"source":"test-ui","note":"small talk: offers a slot"}
+    {"text":"estais muy ocupados","expected":{"intent":null},"today":"2026-11-10T15:04:00","context":{"hasAppointment":true},"source":"test-ui","note":"small talk: offers a slot"},
+    {"text":"estas?","expected":{"intent":"greeting"},"source":"real"},
+    {"text":"¿estás ahí?","expected":{"intent":"greeting"},"source":"generated"},
+    {"text":"hola, estás?","expected":{"intent":"greeting"},"source":"generated"},
+    {"text":"¿estáis ahí?","expected":{"intent":"greeting"},"source":"generated"},
+    {"text":"hay alguien?","expected":{"intent":"greeting"},"source":"generated"},
+    {"text":"me lees?","expected":{"intent":"greeting"},"source":"generated"}
   ]
 }
