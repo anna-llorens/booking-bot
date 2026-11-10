@@ -158,7 +158,7 @@
     if (!o.appointments.length) cal.append(el('li', 'empty', 'No appointments.'));
     for (const a of o.appointments) {
       const li = el('li', a.customerId === o.customer?.id ? 'mine' : '', `${a.date} ${a.time} · ${a.name} (${a.duration} min)`);
-      li.append(el('div', 'sub', a.customerId === o.customer?.id ? 'this customer' : `customer #${a.customerId}`));
+      li.append(el('div', 'sub', (a.customerId === o.customer?.id ? 'this customer' : `customer #${a.customerId}`) + (a.notes ? ` · 📝 ${a.notes}` : '')));
       cal.append(li);
     }
     const inbox = $('inbox'); inbox.replaceChildren();

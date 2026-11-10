@@ -7,7 +7,7 @@ const today = new Date(2026, 10, 10, 10, 0); // Tuesday 10 Nov 2026
 function chat(messages, state = newConversation()) {
   const turns = [];
   for (const m of messages) {
-    const r = respond(m, state, { today });
+    const r = respond(m, state, { today, business: { askForNotes: false } });
     state = r.state;
     turns.push(r);
   }
@@ -71,9 +71,12 @@ const cases = {
   },
   'a side remark in the middle of a booking keeps the booking going': () => {
     const t = chat(['quería cita para peinarme el sábado', 'Tengo una boda por la noche']);
-    assert.ok(t[1].handover);
+    assert.ok(!t[1].handover, 'a remark is written down as a note, the owner is not bothered');
+    assert.deepEqual(t[1].state.pending.notes, ['Tengo una boda por la noche']);
     assert.equal(t[1].state.lastQuestion, 'proposal');
     assert.match(t[1].reply, /^Tomo nota/);
+    const q = chat(['quería cita para peinarme el sábado', '¿hay parking?']);
+    assert.ok(q[1].handover, 'a question still goes to the owner');
   },
   'when she is not sure she can come, asks whether to move or cancel': () => {
     const appt = { service: 'corte', name: 'Corte', duration: 30, date: '2026-11-11', time: '10:00' };

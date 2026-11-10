@@ -489,8 +489,9 @@ function understand(message, { today = new Date(), services = SAMPLE_CATALOG, co
   }
   result.normalizedText = t;
   if (result.intent === 'info') result.topic = result.infoTopics[0];
+  // a category named on its own ("manos y pies", "lo de cejas"), e.g. right after the services list
+  result.category = SERVICE_CATEGORIES.find(([, re]) => re.test(t))?.[0] ?? null;
   if (result.intent === 'services') {
-    result.category = SERVICE_CATEGORIES.find(([, re]) => re.test(t))?.[0] ?? null;
     result.withPrices = /\b(precios?|tarifas?|cuesta|cuestan|cuanto)\b/.test(t);
   }
   // "tengo una boda el sábado": the date is the event's, not the appointment's

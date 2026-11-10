@@ -32,6 +32,7 @@ const DEFAULT_BUSINESS = {
   // Answers the owner writes when setting up the salon. Empty ones are handed to the owner.
   info: {},              // { walkIn, payment, parking, children, pets, cancellationPolicy, latePolicy }
   name: null,            // the salon's name (bot.js passes it from the businesses table)
+  askForNotes: true,     // before booking, ask "¿quieres que apunte algo especial?" and save it with the appointment
 };
 
 const WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -189,6 +190,11 @@ function listTimes(times) {
   return times.map((t, i) => `${i + 1}) ${t}`).join('  ');
 }
 
+// Details worth writing down for the stylist: "solo las puntas", "es para mi hija", "soy alérgica…",
+// "tengo el pelo muy largo", "un diseño de flores", "sin secador". The whole message is kept as the note.
+const NOTE_HINT = /\b(solo (las puntas|un poco|sanear|arreglar|retocar|las raices|el flequillo|repasar)|(es|seria|sera|son) para (mi|mis) \w+|para mi (hija|hijo|hijas|hijos|madre|padre|marido|mujer|pareja|novio|novia|amiga|hermana|hermano|abuela|suegra|nieta|sobrina)|alergi\w*|alergic\w*|sensibl\w*|embarazad\w*|piel (sensible|atopica|seca|grasa)|(tengo|tiene) el (pelo|cabello)|(pelo|cabello) (muy |bastante )?(largo|corto|rizado|liso|fino|grueso|tenido|danado|seco)|diseno|dibuj\w*|en (color|tono) \w+|color (nude|rojo|rosa|blanco|negro|granate|burdeos|natural)|(con|sin) (secado|secador|lavado|plancha|ondas|flequillo)|flequillo|como en la foto|te (mando|paso|envio) (una )?foto|no me (cortes|quites|toques)|poco a poco|que no (me |le |te )?(corte|quite|toque|pinte)s?)\b/;
+const noteFrom = (message, t) => NOTE_HINT.test(t) ? message.trim().replace(/\s+/g, ' ').slice(0, 200) : null;
+
 // "¿Qué día…" → "¿qué día…" (skips the opening ¿ / ¡)
 const lowerFirst = s => s.replace(/^([¿¡]?)(\p{L})/u, (_, p, c) => p + c.toLowerCase());
 
@@ -304,6 +310,10 @@ function computeReply(message, state = newConversation(), {
     }
     if (u.intent === 'confirm' && !u.service && !u.date && !u.time) return out('¡Claro! Dime 😊');
   }
+  // "manos y pies" right after the services list (or when asked for the service): that category in detail
+  if ((previousTopic === 'services' || state.lastQuestion === 'service') && u.category && !u.service &&
+      [null, 'book', 'reschedule'].includes(u.intent) && !u.date && !u.time) topic = 'services';
+
   // "las dos cosas" / "ambas" right after "¿Para X, Y o las dos cosas?"
   if (state.lastQuestion === 'service' && state.recentServices?.length > 1 && !u.service && u.intent !== 'price' &&
       /\b(las dos|los dos|ambas|ambos|las 2|todo|todas|las tres)\b/.test(t)) topic = 'book';
@@ -337,9 +347,14 @@ function computeReply(message, state = newConversation(), {
   }
 
   // Copies whatever the customer just said into the appointment being built.
+  const addNote = text => {
+    const p = state.pending;
+    if (text && !(p.notes ?? []).includes(text)) p.notes = [...(p.notes ?? []), text];
+  };
   const merge = () => {
     const p = state.pending;
     const previousTime = p.time;
+    addNote(noteFrom(message, t)); // "corte, solo las puntas", "para mi hija"…
     if (u.service === 'LAST' && usual?.length) {
       // "lo de siempre": her last service, from her history
       p.service = usual[0].group; p.details = usual; p.duration = usual.reduce((n, d) => n + (d.duration ?? 0), 0) || null;
@@ -486,7 +501,7 @@ function computeReply(message, state = newConversation(), {
   };
 
   // Books (or moves) the appointment at the chosen time.
-  const book = time => {
+  const book = (time, { skipNotes = false } = {}) => {
     const p = state.pending;
     // never accept a slot that is no longer valid (notice window passed, taken, outside the diary)
     if (!freeSlots(p.date, { duration: p.duration || 30 }, now, business, isFree).includes(toMinutes(time))) {
@@ -495,6 +510,15 @@ function computeReply(message, state = newConversation(), {
       return { ...step, reply: `Vaya, a las ${time} ya no puedo darte cita 😔 ${step.reply}` };
     }
     const wasReschedule = state.mode === 'reschedule' && appt;
+    // Before booking a new appointment: "¿quieres que apunte algo especial?" (asked once)
+    if (business.askForNotes && !wasReschedule && !skipNotes && !p.notesAsked) {
+      p.notesAsked = true; p.time = time;
+      state.lastQuestion = 'notes'; state.proposals = [time];
+      const have = p.notes?.length ? ` Te apunto como nota: «${p.notes.join(' · ')}».` : '';
+      const ask = have ? '¿Quieres que apunte algo más?' : '¿Quieres que apunte algo especial para la cita (un diseño, alergias, si es para otra persona…)?';
+      return out(`¡Genial! Te guardo ${serviceLabel(p)} ${formatDate(p.date, today)} a las ${time}.${have} ${ask} Si no, dime «no» y lo confirmo.`);
+    }
+    const notes = [...(wasReschedule && appt.notes ? [appt.notes] : []), ...(p.notes ?? [])].join(' · ') || null;
     state.appointment = {
       ...(wasReschedule && appt.id ? { id: appt.id } : {}),
       service: p.service,
@@ -503,13 +527,32 @@ function computeReply(message, state = newConversation(), {
       duration: p.duration || 30,
       date: p.date,
       time,
+      notes,
     };
     state.lastOffer = state.proposals.length > 1 ? { date: p.date, times: [...state.proposals], pending: { ...p } } : null;
     state.pending = {}; state.mode = 'book'; state.lastQuestion = null; state.proposals = []; state.recentServices = [];
+    const noteText = notes && !wasReschedule ? ` Nota: «${notes}».` : '';
     return out(wasReschedule
       ? `¡Hecho! Te he cambiado la cita: ${apptText(state.appointment)}. ¡Hasta entonces! 😊`
-      : `¡Perfecto! Te apunto para ${apptText(state.appointment)}. ¡Hasta entonces! 😊`);
+      : `¡Perfecto! Te apunto para ${apptText(state.appointment)}.${noteText} ¡Hasta entonces! 😊`);
   };
+
+  // Answer to "¿Quieres que apunte algo especial?": a note, a "no", or a change of plans
+  if (state.lastQuestion === 'notes' && state.pending.time) {
+    const time = state.pending.time;
+    // a service named inside a note ("que no le corte el flequillo") is part of the note, not a change
+    const looksLikeNote = !!noteFrom(message, t);
+    const changes = u.date || u.time || u.option || ((u.service || u.timeOfDay) && !looksLikeNote) ||
+      ['reschedule', 'cancel', 'undecided', 'wait', 'waitlist', 'check', 'price', 'hours', 'info', 'services', 'duration', 'keep'].includes(u.intent);
+    if (!changes) {
+      if (/^(si+|vale si|si quiero|si porfa|si por favor)$/.test(t)) return out('¡Claro! Dime qué quieres que apunte 😊');
+      const nothing = /^(no|nop|nada|no nada|nada mas|no gracias|asi esta bien|esta bien|asi bien|todo bien|ninguna|nada especial|no hace falta)( gracias)?$/.test(t) ||
+        (['confirm', 'thanks'].includes(u.intent) && !noteFrom(message, t));
+      if (!nothing) addNote(message.trim().replace(/\s+/g, ' ').slice(0, 200));
+      return book(time, { skipNotes: true });
+    }
+    state.lastQuestion = 'proposal'; // she changed something: carry on as with any offer
+  }
 
   // "ya me dices cuando puedas", "me dices algo": she is waiting for the salon, not choosing a time
   if (/\b(ya me (dices|diras|contaras|cuentas|comentas)|me (dices|cuentas|comentas) algo|me (dices|cuentas) cuando (puedas|sepas|lo veas))\b/.test(t) && !u.date && !u.time) {
@@ -969,6 +1012,9 @@ function computeReply(message, state = newConversation(), {
       // time, but the server still saves it to not-understood.json.
       if (!u.offTopic && !u.service && !u.date && !u.time && !u.timeOfDay && isNonsense(t)) {
         const again = (state.misunderstood ?? 0) >= 1; // second time in a row: explain what it can do
+        if (state.lastQuestion === 'service' && !state.pending.service) {
+          return out('No sé qué servicio es ese 🤔 ¿Me lo dices de otra forma? Si quieres, te digo lo que hacemos (por ejemplo, "¿qué hacéis de uñas?").', { fallback: true, nonsense: true });
+        }
         if (BOOKING_QUESTIONS.includes(state.lastQuestion)) {
           const step = nextStep();
           return { ...step, reply: `${again ? 'Sigo sin entenderte 😅' : 'Perdona, no te he entendido 😅'} ${step.reply}`, fallback: true, nonsense: true };
@@ -986,12 +1032,21 @@ function computeReply(message, state = newConversation(), {
       // A side remark in the middle of a booking ("tengo una boda por la noche"): the owner gets it,
       // and the bot carries on with the booking instead of dropping it.
       // A question she asked ("¿hay parking?") gets "te contestamos enseguida", a remark gets "tomo nota".
+      // Asked for the service and got something it doesn't know: not a note, and don't repeat the same list
+      if (state.lastQuestion === 'service' && !state.pending.service) {
+        return { ...out('No sé qué servicio es ese 🤔 ¿Me lo dices de otra forma? Si quieres, te digo lo que hacemos (por ejemplo, "¿qué hacéis de uñas?").'), fallback: true };
+      }
       if (BOOKING_QUESTIONS.includes(state.lastQuestion)) {
         const isQuestion = /\?\s*$/.test(message.trim()) ||
           /^(que|como|cuando|donde|cuanto|cuanta|cuantos|por que|porque|sabes|sabeis|teneis|tienes|hay|puedo|se puede|podeis|puedes|con que)\b/.test(t);
+        if (!isQuestion) {
+          // "tiene el pelo bastante largo", "tengo una boda por la noche": written down for the stylist
+          addNote(message.trim().replace(/\s+/g, ' ').slice(0, 200));
+          const step = nextStep();
+          return { ...step, reply: `Tomo nota 😊 Mientras, ${lowerFirst(step.reply)}` };
+        }
         const step = nextStep();
-        const ack = isQuestion ? 'Te contestaremos enseguida.' : 'Tomo nota 😊';
-        return { ...step, reply: `${ack} Mientras, ${lowerFirst(step.reply)}`, handover: true, fallback: true };
+        return { ...step, reply: `Te contestaremos enseguida. Mientras, ${lowerFirst(step.reply)}`, handover: true, fallback: true };
       }
       return { ...handover('Te contestaremos enseguida.'), fallback: !u.offTopic };
     }

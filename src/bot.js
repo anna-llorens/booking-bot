@@ -26,7 +26,7 @@ function normalizePhone(phone) {
 }
 
 // The conversation state only needs the fields reply.js uses
-const toStateAppointment = a => a && { id: a.id, service: a.service, name: a.name, details: a.details, duration: a.duration, date: a.date, time: a.time };
+const toStateAppointment = a => a && { id: a.id, service: a.service, name: a.name, details: a.details, duration: a.duration, date: a.date, time: a.time, notes: a.notes ?? null };
 
 // Free if fewer than `capacity` booked appointments overlap [start, start + duration).
 // `ignoreId`: her own appointment, so moving it can reuse its slot.
@@ -84,7 +84,7 @@ async function handleMessage(store, { businessId, phone, text, now = new Date() 
     if (!makeIsFree(fresh, { ...business.settings, simulatedBusy: false }, before?.id)(after.date, toMinutes(after.time), after.duration)) {
       conflict = true;
     } else if (after.id && before && after.id === before.id) {
-      appointment = await store.updateAppointment(businessId, before.id, { date: after.date, time: after.time, service: after.service, name: after.name, details: after.details, duration: after.duration });
+      appointment = await store.updateAppointment(businessId, before.id, { date: after.date, time: after.time, service: after.service, name: after.name, details: after.details, duration: after.duration, notes: after.notes ?? null });
     } else {
       appointment = await store.createAppointment({ businessId, customerId: customer.id, ...after });
     }

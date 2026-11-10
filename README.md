@@ -114,7 +114,9 @@ Other situations handled by `reply.js`: lost things ("me he dejado el paraguas" 
 
 **It never does something irreversible on a guess.** Cancelling always asks first. "Sí" + a day that isn't her appointment's asks before moving it. A slot taken by someone else between the proposal and her "sí" is not double-booked ("esa hora se acaba de ocupar"). "Lo hablo con mi marido y te confirmo" books nothing.
 
-**Closing a booking** repeats service, day and time in one message, so she has it in writing.
+**Notes for the stylist.** Before booking it asks "¿Quieres que apunte algo especial para la cita (un diseño, alergias, si es para otra persona…)? Si no, dime «no» y lo confirmo." Whatever she answers is saved as the appointment's note ("no", "vale" → no note; a change of plans → carries on normally). Details she gives on the way ("solo las puntas", "es para mi hija", "tiene el pelo muy largo", "soy alérgica…", remarks in the middle of a booking) are collected too, shown in that question and saved. They appear in the confirmation and in the salon calendar.
+
+**Closing a booking** repeats service, day, time and notes in one message, so she has it in writing.
 
 **When it doesn't understand:**
 - Made-up text ("oeoe", "asdf qwer", checked against a Spanish dictionary) → "Perdona, no te he entendido 😅"; the second time it explains what it can do. Not sent to the owner.
@@ -141,6 +143,8 @@ Each salon's settings live in `businesses.settings` (JSON). Anything left out ta
 | `maxDaysAhead` | `60` | The diary is open this many days ahead (bot.js also loads the calendar that far) |
 | `address` | `null` | Answered to "¿dónde estáis?" |
 | `info` | `{}` | Answers the owner writes: `walkIn`, `payment`, `parking`, `children`, `pets`, `cancellationPolicy`, `latePolicy`. Empty ones go to the owner |
+| `askForNotes` | `true` | Before booking, ask "¿quieres que apunte algo especial?" and save the answer as the appointment's note |
+| `name` | — | Not a setting: `bot.js` passes the salon's name from the `businesses` table ("¿cómo se llama la peluquería?") |
 | `simulatedBusy` | `false` | Demo only: also block some fake busy slots |
 
 A complete example:
@@ -202,10 +206,10 @@ Labelling tips: not every "vale" is `confirm` (it can be `undecided`, or the ans
 
 | File | Checks |
 |---|---|
-| `test/understand.test.js` + `test/fixtures/phrases.json` | 686 single messages (intent, topic, service, date, time…) |
+| `test/understand.test.js` + `test/fixtures/phrases.json` | 704 single messages (intent, topic, service, date, time…) |
 | `test/reply.test.js` | Short scripted conversations through `respond()` |
-| `test/conversations.test.js` + `test/fixtures/conversations.json` | 37 whole conversations, optionally with salon settings: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
-| `test/store.test.js` | Database and `bot.js` end to end on an in-memory SQLite: salons kept apart, no double booking, moves update, cancel asks first, "lo de siempre" from history, phone formats, holidays, GDPR delete |
+| `test/conversations.test.js` + `test/fixtures/conversations.json` | 42 whole conversations, optionally with salon settings: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
+| `test/store.test.js` | Database and `bot.js` end to end on an in-memory SQLite: salons kept apart, no double booking, moves update, cancel asks first, "lo de siempre" from history, phone formats, holidays, notes, GDPR delete |
 
 `npm test` runs all four.
 

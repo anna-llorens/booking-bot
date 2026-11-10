@@ -96,6 +96,9 @@ const MIGRATIONS = [
 
   // 3: phones in international format (bot.js normalizePhone): "600111222" -> "34600111222"
   `UPDATE customers SET phone = '34' || phone WHERE length(phone) = 9;`,
+
+  // 4: notes for the stylist ("solo las puntas", "es para mi hija", allergies…)
+  `ALTER TABLE appointments ADD COLUMN notes TEXT;`,
 ];
 
 const now = () => new Date().toISOString();
@@ -109,7 +112,7 @@ const rowToService = r => ({
 const rowToCustomer = r => r && { id: r.id, businessId: r.business_id, phone: r.phone, name: r.name, createdAt: r.created_at, lastSeenAt: r.last_seen_at };
 const rowToAppointment = r => r && {
   id: r.id, businessId: r.business_id, customerId: r.customer_id, service: r.service, name: r.name,
-  details: json(r.details, []), date: r.date, time: r.time, duration: r.duration, status: r.status,
+  details: json(r.details, []), date: r.date, time: r.time, duration: r.duration, status: r.status, notes: r.notes ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
 };
 
@@ -200,18 +203,18 @@ class SqliteStore {
   }
   async createAppointment(a) {
     const t = now();
-    const r = this.db.prepare(`INSERT INTO appointments (business_id, customer_id, service, name, details, date, time, duration, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?)`)
-      .run(a.businessId, a.customerId, a.service, a.name, JSON.stringify(a.details ?? []), a.date, a.time, a.duration, t, t);
+    const r = this.db.prepare(`INSERT INTO appointments (business_id, customer_id, service, name, details, date, time, duration, notes, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?)`)
+      .run(a.businessId, a.customerId, a.service, a.name, JSON.stringify(a.details ?? []), a.date, a.time, a.duration, a.notes ?? null, t, t);
     return rowToAppointment(this.db.prepare('SELECT * FROM appointments WHERE id = ?').get(Number(r.lastInsertRowid)));
   }
   async updateAppointment(businessId, id, patch) {
     const cur = rowToAppointment(this.db.prepare('SELECT * FROM appointments WHERE business_id = ? AND id = ?').get(businessId, id));
     if (!cur) return null;
     const a = { ...cur, ...patch };
-    this.db.prepare(`UPDATE appointments SET service = ?, name = ?, details = ?, date = ?, time = ?, duration = ?, status = ?, updated_at = ?
+    this.db.prepare(`UPDATE appointments SET service = ?, name = ?, details = ?, date = ?, time = ?, duration = ?, notes = ?, status = ?, updated_at = ?
       WHERE business_id = ? AND id = ?`)
-      .run(a.service, a.name, JSON.stringify(a.details ?? []), a.date, a.time, a.duration, a.status, now(), businessId, id);
+      .run(a.service, a.name, JSON.stringify(a.details ?? []), a.date, a.time, a.duration, a.notes ?? null, a.status, now(), businessId, id);
     return rowToAppointment(this.db.prepare('SELECT * FROM appointments WHERE id = ?').get(id));
   }
   async cancelAppointment(businessId, id) { return this.updateAppointment(businessId, id, { status: 'cancelled' }); }

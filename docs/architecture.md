@@ -63,7 +63,7 @@ All tables (except `businesses`) have `business_id`; every query filters by it. 
 | `businesses` | `id` (text, e.g. `demo-peluqueria`) | `name`, `settings` (JSON, see below) |
 | `services` | `(business_id, id)` | the salon's catalog: `group_id`, `category`, `name`, `duration` (min), `price` (€, optional), `synonyms` (JSON, Spanish), `active`, `position` |
 | `customers` | `id`; unique `(business_id, phone)` | `phone` (international digits, e.g. `34600111222`), `name`, `created_at`, `last_seen_at` |
-| `appointments` | `id` | `customer_id`, `service` (group), `name` (as shown to her), `details` (JSON: specific services), `date`, `time`, `duration`, `status` (`booked` / `cancelled`) |
+| `appointments` | `id` | `customer_id`, `service` (group), `name` (as shown to her), `details` (JSON: specific services), `date`, `time`, `duration`, `notes` (for the stylist), `status` (`booked` / `cancelled`) |
 | `conversations` | `(business_id, customer_id)` | `state` (JSON: reply.js conversation state), `updated_at` |
 | `messages` | `id` | `customer_id`, `direction` (`in` / `out`), `text`, `intent` |
 | `handovers` | `id` | the owner's inbox: `customer_id`, `message`, `reason`, `status` (`open` / `done`) |
@@ -102,7 +102,7 @@ Everything the bot needs from storage is in [src/store/README.md](../src/store/R
 
 ### Migrations
 
-`MIGRATIONS` in `src/store/sqlite-store.js` is a list of SQL scripts. On start, the store runs the ones not applied yet (tracked in SQLite's `user_version`), each in a transaction. **Never edit an applied migration; add a new one.** Current: 1 schema, 2 waiting list, 3 phones in international format.
+`MIGRATIONS` in `src/store/sqlite-store.js` is a list of SQL scripts. On start, the store runs the ones not applied yet (tracked in SQLite's `user_version`), each in a transaction. **Never edit an applied migration; add a new one.** Current: 1 schema, 2 waiting list, 3 phones in international format, 4 appointment notes.
 
 ## Availability
 

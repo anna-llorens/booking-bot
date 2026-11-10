@@ -12,6 +12,8 @@ const BEAUTY = 'demo-estetica';
 async function freshStore() {
   const store = createStore(':memory:');
   await seedDemoData(store);
+  // these tests book in one step; the notes question has its own test
+  for (const b of await store.listBusinesses()) await store.saveBusiness({ ...b, settings: { ...b.settings, askForNotes: false } });
   return store;
 }
 const say = (store, businessId, phone, text, at = now) => handleMessage(store, { businessId, phone, text, now: at });
@@ -111,6 +113,18 @@ const cases = {
     const settings = (await store.getBusiness(SALON)).settings;
     assert.equal(makeIsFree([], { ...settings, simulatedBusy: false })('2026-12-08', 600, 30), false);
     assert.equal(makeIsFree([], { ...settings, simulatedBusy: false })('2026-12-09', 600, 30), true);
+  },
+
+  'notes are asked before booking and saved with the appointment; the salon name is answered': async () => {
+    const store = createStore(':memory:');
+    await seedDemoData(store); // demo settings as shipped: askForNotes on
+    await say(store, SALON, '611', 'tienes un hueco para el martes unas ?');
+    assert.match((await say(store, SALON, '611', '2')).reply, /apunte algo especial/);
+    assert.equal((await store.listAppointments(SALON)).length, 0, 'not booked before answering');
+    await say(store, SALON, '611', 'en tono nude, porfa');
+    const [a] = await store.listAppointments(SALON);
+    assert.equal(a.notes, 'en tono nude, porfa');
+    assert.match((await say(store, SALON, '622', 'como se llama la peluqueria?')).reply, /Somos Peluquería Demo/);
   },
 
   'waiting list, owner inbox and message history are saved': async () => {
