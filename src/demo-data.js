@@ -8,7 +8,20 @@ const PRICES = {
   peinado: 18, barba: 10, manicura: 15, manicura_semipermanente: 22, manicura_francesa: 25, pedicura: 25,
   depilacion_cejas: 8, depilacion_labio: 6, depilacion_piernas: 25, facial: 40,
 };
-const withPrices = services => services.map(s => (PRICES[s.id] != null ? { ...s, price: PRICES[s.id] } : s));
+// Example descriptions ("¿en qué consiste?"). Each salon writes its own; services without one go to the stylist.
+const DESCRIPTIONS = {
+  microblading: 'Es un maquillaje semipermanente de cejas: se dibujan pelo a pelo con una cuchilla muy fina y pigmento, para darles forma y densidad. Dura alrededor de un año y se recomienda un retoque al mes.',
+  queratina: 'Es un tratamiento alisador: se aplica keratina en el pelo y se sella con plancha. Quita el encrespamiento y deja el pelo liso y brillante durante unos 3-4 meses.',
+  manicura_semipermanente: 'Es una manicura con esmalte que se seca con lámpara: no se descascarilla y dura unas 2-3 semanas.',
+  manicura_rusa: 'Es una manicura en seco, con torno, que limpia muy bien la cutícula. El esmalte queda pegado a la piel y dura más.',
+  mechas_balayage: 'Son mechas pintadas a mano, más claras en las puntas, con un efecto natural y degradado.',
+  laminado_cejas: 'Es un tratamiento que alisa y fija el pelo de las cejas hacia arriba para que se vean más pobladas y peinadas. Dura unas 6 semanas.',
+};
+const withPrices = services => services.map(s => ({
+  ...s,
+  ...(PRICES[s.id] != null ? { price: PRICES[s.id] } : {}),
+  ...(DESCRIPTIONS[s.id] ? { description: DESCRIPTIONS[s.id] } : {}),
+}));
 
 const BEAUTY_CATEGORIES = ['estetica_facial', 'estetica_corporal', 'depilacion', 'manicura_pedicura', 'pestanas_cejas'];
 

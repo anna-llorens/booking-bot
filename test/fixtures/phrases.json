@@ -758,6 +758,15 @@
     {"text":"el jueves a las 12","expected":{"intent":"reschedule"},"context":{"hasAppointment":true},"source":"generated","note":"only a day/time with an appointment: moving it"},
     {"text":"citas","expected":{"intent":"check"},"source":"test-ui","note":"lists her appointments, then offers another"},
     {"text":"ver mis citas","expected":{"intent":"check"},"source":"generated"},
-    {"text":"cita","expected":{"intent":"book"},"source":"generated","note":"singular: starts a booking"}
+    {"text":"cita","expected":{"intent":"book"},"source":"generated","note":"singular: starts a booking"},
+    {"text":"servicios","expected":{"intent":"services"},"today":"2026-11-10T14:16:00","context":{"lastQuestion":"anythingElse","hasAppointment":true},"source":"test-ui"},
+    {"text":"mis citas","expected":{"intent":"check"},"today":"2026-11-10T14:54:00","context":{"lastQuestion":"proposal","proposals":["17:00","19:30"],"hasAppointment":true},"source":"test-ui"},
+    {"text":"mis citas","expected":{"intent":"check"},"today":"2026-11-10T14:54:00","source":"test-ui"},
+    {"text":"en que consiste?","expected":{"intent":null},"today":"2026-11-10T14:57:00","context":{"lastQuestion":"proposal","proposals":["10:30","18:00"]},"source":"test-ui","note":"reply.js: the service's description, or the stylist"},
+    {"text":"citas","expected":{"intent":"check"},"today":"2026-11-10T15:00:00","context":{"hasAppointment":true},"source":"test-ui"},
+    {"text":"citas","expected":{"intent":"check"},"today":"2026-11-10T15:02:00","context":{"lastQuestion":"proposal","proposals":["18:00","19:30"],"hasAppointment":true},"source":"test-ui"},
+    {"text":"creo que funciona bastante bien","expected":{"intent":null},"today":"2026-11-10T15:04:00","context":{"hasAppointment":true},"source":"test-ui","note":"positive feedback: thanks"},
+    {"text":"estais muy ocupados","expected":{"intent":null},"today":"2026-11-10T15:04:00","context":{"hasAppointment":true},"source":"test-ui","note":"small talk: offers a slot"},
+    {"text":"otro","expected":{"intent":null},"today":"2026-11-10T15:05:00","context":{"lastQuestion":"proposal","proposals":["12:00","18:00"],"hasAppointment":true},"source":"test-ui","note":"after an offer: the next day with room"}
   ]
 }

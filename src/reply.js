@@ -475,7 +475,7 @@ function computeReply(message, state = newConversation(), {
     const p = state.pending;
     if (u.service || p.service || !recent.length) return null;
     // only right after talking about them ("¿cuánto cuesta el tinte?" → "vale, dame cita"), not hours later
-    const justAsked = ['price', 'duration', 'services'].includes(previousTopic) || (state.lastQuestion === 'service' && previousTopic === 'book');
+    const justAsked = ['price', 'duration', 'services', 'describe'].includes(previousTopic) || (state.lastQuestion === 'service' && previousTopic === 'book');
     if (!justAsked) return null;
     const both = /\b(las dos( cosas)?|las 2( cosas)?|ambas( cosas)?|todo eso|todo|las tres( cosas)?)\b/.test(t);
     if (both || recent.length === 1) {
@@ -675,6 +675,33 @@ function computeReply(message, state = newConversation(), {
       state.lastQuestion = 'service'; state.proposals = [];
       return out(`${name} ${label} 😔 Lo que sí hacemos: ${serviceExamples(services, 5).join(', ')}… Si quieres, te enseño la lista completa («servicios»).`);
     }
+  }
+
+  // "¿en qué consiste?", "¿qué es el microblading?": the service's description, or the stylist explains
+  if (/\b(en que consiste|que es (eso|esto|el|la|lo)|que incluye|que lleva|como es (eso|el|la)|que hac(eis|en|es) en|me explicas|explicame)\b/.test(t) &&
+      !u.date && !u.time && [null, 'book', 'services', 'price', 'reschedule'].includes(u.intent)) {
+    topic = 'describe';
+    const source = u.details.length ? u.details : (state.pending.details ?? []);
+    const texts = source.map(d => services.find(s => s.id === d.id)).filter(s => s?.description).map(s => s.description);
+    const inBooking = BOOKING_QUESTIONS.includes(state.lastQuestion) && state.pending.service;
+    if (texts.length) {
+      if (inBooking) { const step = nextStep(); return { ...step, reply: `${texts.join(' ')} ${step.reply}` }; }
+      state.lastQuestion = 'offerBooking'; state.proposals = [];
+      if (u.details.length) remember(u.details);
+      return out(`${texts.join(' ')} ¿Quieres que te busque hueco?`);
+    }
+    if (source.length || u.service) {
+      if (inBooking) { const step = nextStep(); return { ...step, reply: `Te lo explica la peluquera enseguida 😊 Mientras, ${lowerFirst(step.reply)}`, handover: true }; }
+      return { ...handover('Te lo explica la peluquera enseguida 😊'), fallback: false };
+    }
+  }
+
+  // "¿estáis muy ocupados?", "¿tenéis mucho lío?": answer and offer a slot
+  if (/\b(estais|estas|vais|ibais) (muy |tan |bastante )?(ocupad[oa]s?|liad[oa]s?|a tope|llenos|completos)\b|\b(teneis|tienes|hay) (mucho|tanto) (lio|trabajo|jaleo)\b/.test(t) && !u.date && !u.service) {
+    topic = 'busy';
+    if (BOOKING_QUESTIONS.includes(state.lastQuestion) && state.pending.service) { const step = nextStep(); return { ...step, reply: `Bastante, pero te encuentro hueco 😊 ${step.reply}` }; }
+    state.lastQuestion = 'offerBooking'; state.proposals = [];
+    return out('Bastante, ¡pero seguro que te encuentro un hueco! 😊 ¿Quieres que te busque uno?');
   }
 
   // "ya me dices cuando puedas", "me dices algo": she is waiting for the salon, not choosing a time
@@ -1226,6 +1253,10 @@ function computeReply(message, state = newConversation(), {
       // "ya estoy aquí", "estoy en la puerta": the salon needs to know right away
       if (/\b(ya )?(estoy|he llegado|estamos) (en la puerta|aqui|fuera|abajo|llegando ya)\b|\bhe llegado\b/.test(t)) {
         return { ...out('¡Perfecto, ahora te abrimos! 😊'), handover: true };
+      }
+      // "creo que funciona bastante bien", "esto está muy bien": positive feedback
+      if (/\b(funciona (muy |bastante |super )?bien|esta (muy |bastante |super )?bien( esto| hecho)?|me gusta (mucho |bastante )?(esto|como funciona|el bot)|que (bien|chulo|util) (esto|el bot)|muy util)\b/.test(t)) {
+        return out('¡Muchas gracias! 😊 ¿Te puedo ayudar en algo?');
       }
       // "qué fuerte", "qué mal", "vaya": a reaction with nothing for the owner to answer
       if (/^(que (fuerte|mal|pena|rollo|faena|horror|palo|raro|susto)|vaya|uf+|madre mia|ostras|jo|jolin|en serio)$/.test(t)) {

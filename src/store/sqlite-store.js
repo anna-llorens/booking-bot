@@ -99,6 +99,9 @@ const MIGRATIONS = [
 
   // 4: notes for the stylist ("solo las puntas", "es para mi hija", allergies…)
   `ALTER TABLE appointments ADD COLUMN notes TEXT;`,
+
+  // 5: what a service consists of, for "¿en qué consiste?"
+  `ALTER TABLE services ADD COLUMN description TEXT;`,
 ];
 
 const now = () => new Date().toISOString();
@@ -107,7 +110,7 @@ const json = (v, fallback) => (v == null ? fallback : JSON.parse(v));
 const rowToBusiness = r => r && { id: r.id, name: r.name, settings: json(r.settings, {}), createdAt: r.created_at };
 const rowToService = r => ({
   id: r.id, group: r.group_id, category: r.category, name: r.name, duration: r.duration,
-  price: r.price, synonyms: json(r.synonyms, []), active: !!r.active,
+  price: r.price, synonyms: json(r.synonyms, []), active: !!r.active, description: r.description ?? null,
 });
 const rowToCustomer = r => r && { id: r.id, businessId: r.business_id, phone: r.phone, name: r.name, createdAt: r.created_at, lastSeenAt: r.last_seen_at };
 const rowToAppointment = r => r && {
@@ -163,10 +166,10 @@ class SqliteStore {
   async saveServices(businessId, services) {
     this.tx(() => {
       this.db.prepare('DELETE FROM services WHERE business_id = ?').run(businessId);
-      const ins = this.db.prepare(`INSERT INTO services (business_id, id, group_id, category, name, duration, price, synonyms, active, position)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const ins = this.db.prepare(`INSERT INTO services (business_id, id, group_id, category, name, duration, price, synonyms, active, position, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       services.forEach((s, i) => ins.run(businessId, s.id, s.group, s.category ?? null, s.name, s.duration ?? null,
-        s.price ?? null, JSON.stringify(s.synonyms ?? []), s.active === false ? 0 : 1, i));
+        s.price ?? null, JSON.stringify(s.synonyms ?? []), s.active === false ? 0 : 1, i, s.description ?? null));
     });
   }
 

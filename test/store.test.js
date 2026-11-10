@@ -151,6 +151,12 @@ const cases = {
     assert.deepEqual((await store.listAppointments(SALON)).map(a => a.name), ['Corte']);
   },
 
+  '"¿en qué consiste?" answers from the salon\'s service description': async () => {
+    const store = await freshStore();
+    await say(store, SALON, '611', 'microblading');
+    assert.match((await say(store, SALON, '611', 'en que consiste?')).reply, /maquillaje semipermanente de cejas/);
+  },
+
   'waiting list, owner inbox and message history are saved': async () => {
     const store = await freshStore();
     await say(store, SALON, '611', 'si alguien cancela el jueves avísame');
