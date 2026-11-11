@@ -52,8 +52,9 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 | Method | Returns |
 |---|---|
 | `addHandover({ businessId, customerId, message, reason })` | — |
-| `listHandovers(businessId, { status = 'open' })` | newest first, with the customer's `phone` |
+| `listHandovers(businessId, { status = 'open' })` | newest first, with the customer's `phone`, `customerName` and `before` (the bot's message just before hers) |
 | `closeHandover(businessId, id)` | — |
+| `reopenHandover(businessId, id)` | — back to `open` (owner mode «deshacer») |
 | `addToWaitlist({ businessId, customerId, service, details, date, timeOfDay, earlier })` | — |
 | `listWaitlist(businessId, { status = 'waiting' })` | oldest first, with the customer's `phone` |
 

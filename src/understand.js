@@ -609,5 +609,5 @@ function understandBatch(messages, { seconds = 90, ...options } = {}) {
 // read the same way for the owner and for customers.
 module.exports = {
   understand, understandBatch, normalize, basicNormalize, REPLACEMENTS, WEEKDAYS, MONTHS, NUMBER_WORDS,
-  detectDate, detectTime, detectTimeOfDay, detectServices,
+  detectDate, detectTime, detectTimeOfDay, detectServices, distance,
 };

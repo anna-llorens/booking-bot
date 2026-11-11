@@ -127,7 +127,9 @@ function handleDefault(ctx) {
     }
     // Made-up words only ("oeoe", "asdf qwer"): say so and let her rephrase. Not worth the owner's
     // time, but the server still saves it to not-understood.json.
-    if (!u.offTopic && !u.service && !u.date && !u.time && !u.timeOfDay && isNonsense(t)) {
+    // Also noise: one or two letters ("p", "pp"), one letter repeated ("sss"), or a test command ("login")
+    const noise = t.replace(/[^a-z]/g, '').length <= 2 || /^[a-z]{1,2}[.!?]*$/i.test(message.trim()) || /^([a-z])\1+$/.test(t.replace(/\s/g, '')) || /^(login|logout)(:\w+)?$/.test(message.trim().toLowerCase());
+    if (!u.offTopic && !u.service && !u.date && !u.time && !u.timeOfDay && (noise || isNonsense(t))) {
       const again = (state.misunderstood ?? 0) >= 1; // second time in a row: explain what it can do
       if (state.lastQuestion === 'service' && !state.pending.service) {
         return out('No sé qué servicio es ese 🤔 ¿Me lo dices de otra forma? Si quieres, te digo lo que hacemos (por ejemplo, "¿qué hacéis de uñas?").', { fallback: true, nonsense: true });

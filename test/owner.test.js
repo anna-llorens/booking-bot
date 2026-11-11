@@ -193,6 +193,91 @@ const cases = {
     assert.deepEqual(left.map(a => [a.date, a.time]), [['2026-11-13', '18:00']]);
   },
 
+  '"queratina 4h": says how long it is now and asks; "queratina" shows duration and price': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, 'queratina')).reply, /Tratamiento de keratina: 2 h · sin precio/);
+    const ask = await say(store, OWNER, 'queratina 4h');
+    assert.match(ask.reply, /Ahora mismo Tratamiento de keratina dura 2 h\. ¿Lo cambio a 4 h\? \(sí \/ no\)/);
+    assert.match((await say(store, OWNER, 'sí')).reply, /Ahora Tratamiento de keratina dura 4 h \(antes 2 h\)/);
+    assert.equal((await store.listServices(SALON)).find(x => x.id === 'queratina').duration, 240);
+  },
+
+  'inbox: numbered list, one message with 3 options, reply to the customer; the reply lands in her chat': async () => {
+    const store = await freshStore();
+    await say(store, CUSTOMER, '¿hacéis descuento a estudiantes?');
+    await say(store, '600111333', 'me dejé el paraguas el otro día, ¿lo tenéis?');
+    await say(store, OWNER, 'login:owner');
+    const list = await say(store, OWNER, '¿qué me han preguntado?');
+    assert.match(list.reply, /Tienes 2 mensajes sin contestar:\n1\) \+34 600 111 333: «me dejé el paraguas/);
+    const item = await say(store, OWNER, '2');
+    assert.match(item.reply, /estudiantes.*\n[\s\S]*1\. Ignorar\n2\. Responder a la clienta\n3\. Responder y que el bot lo conteste solo/);
+    assert.match((await say(store, OWNER, '2')).reply, /Escribe lo que le contesto/);
+    assert.match((await say(store, OWNER, 'Sí, un 10 % con el carnet')).reply, /¿Le envío esto/);
+    const sent = await say(store, OWNER, 'sí');
+    assert.match(sent.reply, /Enviado[\s\S]*Quedan 1/);
+    assert.deepEqual(sent.outbound.map(o => o.phone), ['34600111222']);
+    const customer = await store.findOrCreateCustomer(SALON, '34600111222');
+    assert.equal((await store.listMessages(SALON, customer.id)).at(-1).text, 'Sí, un 10 % con el carnet');
+    assert.equal((await store.listHandovers(SALON)).length, 1, 'answered = no longer pending');
+    // same numbers as the list: 1 is still the umbrella; "1" then option 1 ignores it at once
+    await say(store, OWNER, '1');
+    assert.match((await say(store, OWNER, '1')).reply, /Ignorado[\s\S]*No quedan mensajes/);
+    assert.equal((await store.listHandovers(SALON)).length, 0);
+    assert.match((await say(store, OWNER, 'deshacer')).reply, /Deshecho/);
+    assert.equal((await store.listHandovers(SALON)).length, 1, 'undo puts it back');
+  },
+
+  'teach: the next customer who asks the same gets the owner\'s answer, not a handover': async () => {
+    const store = await freshStore();
+    await say(store, CUSTOMER, '¿tenéis tarjetas regalo?');
+    await say(store, OWNER, 'login:owner');
+    await say(store, OWNER, '¿qué me han preguntado?');
+    await say(store, OWNER, '1');
+    await say(store, OWNER, '3');
+    assert.match((await say(store, OWNER, 'Sí, de 20, 30 o 50 €')).reply, /contestaré eso yo sola/);
+    await say(store, OWNER, 'sí');
+    const other = await say(store, '600222333', 'tenéis tarjetas regalo');
+    assert.ok(!other.handover);
+    assert.match(other.reply, /^Sí, de 20, 30 o 50 €/);
+    assert.equal((await store.listHandovers(SALON)).length, 0);
+    assert.match((await say(store, OWNER, '¿qué respuestas has aprendido?')).reply, /1\) «¿tenéis tarjetas regalo\?» → «Sí, de 20, 30 o 50 €»/);
+    await say(store, OWNER, 'olvida la respuesta 1');
+    await say(store, OWNER, 'sí');
+    assert.ok((await say(store, '600222444', 'tenéis tarjetas regalo')).handover, 'forgotten: back to the owner');
+  },
+
+  '"ignora todos" asks first; noise ("p", "sss", "login") never reaches the inbox': async () => {
+    const store = await freshStore();
+    for (const t of ['p', 'sss', 'login']) {
+      const r = await say(store, CUSTOMER, t);
+      assert.ok(!r.handover, t);
+    }
+    assert.equal((await store.listHandovers(SALON)).length, 0);
+    await say(store, CUSTOMER, '¿vendéis productos?');
+    await say(store, '600111333', '¿tenéis tarjetas regalo?');
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, 'ignora todos')).reply, /¿Quito estos 2 mensajes de pendientes\?/);
+    await say(store, OWNER, 'sí');
+    assert.equal((await store.listHandovers(SALON)).length, 0);
+  },
+
+  'owner demo data: named customers in the agenda, questions in the inbox': async () => {
+    const store = await freshStore();
+    const { seedOwnerDemo } = require('../src/demo-data');
+    const { makeIsFree } = require('../src/bot');
+    const { closedReason } = require('../src/reply');
+    const r = await seedOwnerDemo(store, SALON, new Date(2026, 10, 10, 10), { makeIsFree, closedReason });
+    assert.ok(r.created && r.appointments >= 8, JSON.stringify(r));
+    assert.equal((await seedOwnerDemo(store, SALON, new Date(2026, 10, 10, 10), { makeIsFree, closedReason })).created, false);
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, '¿qué tengo hoy?')).reply, /17:00 Ana García — Corte de mujer/);
+    const inbox = await say(store, OWNER, '¿qué me han preguntado?');
+    assert.match(inbox.reply, /Tienes 5 mensajes/);
+    assert.match((await say(store, OWNER, '1')).reply, /Antes, el bot le había dicho: «Para tratamiento de keratina/);
+    assert.match((await say(store, OWNER, 'citas del mes')).reply, /Este mes tienes 9 citas/);
+  },
+
   'anything else: "No te he entendido", and nothing changes': async () => {
     const store = await freshStore();
     await say(store, OWNER, 'login:owner');

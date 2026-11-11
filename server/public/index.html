@@ -81,6 +81,7 @@
   </label>
   <button id="now" type="button" title="Go back to the real current date and time" hidden>Now</button>
   <button id="seed" title="Give this customer an appointment, to test changing or cancelling it">Add existing appointment</button>
+  <button id="ownerDemo" title="Owner mode: add named customers, appointments this week, questions in the inbox and a waiting list (once per salon)">Owner demo data</button>
   <button id="reset" title="Start a new conversation. Her appointments are kept.">New conversation</button>
 </header>
 <main>
@@ -121,8 +122,8 @@
   ];
   const OWNER_EXAMPLES = [
     '¿qué tengo hoy?', '¿cuántas citas tengo esta semana?', 'el jueves cierro', 'mañana abro a las 10',
-    'sube el tinte a 38', 'apunta a Lucía mañana a las 10 para corte', '¿qué me han preguntado?', 'sí', 'no',
-    'deshacer', 'ayuda', 'logout',
+    'sube el tinte a 38', 'apunta a Lucía mañana a las 10 para corte', 'sí', 'no',
+    '¿qué me han preguntado?', '1', '3', 'queratina', 'queratina 4h', 'citas del mes', 'deshacer', 'ayuda', 'logout',
   ];
   const $ = id => document.getElementById(id);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -262,6 +263,7 @@
       const node = data.silent
         ? add(data.silentReason === 'misunderstood' ? '(no reply: more than 2 messages in a row it did not understand)' : '(no reply: it would repeat the previous answer)', 'bot silent', data)
         : add(data.reply, 'bot', data);
+      for (const m of data.outbound ?? []) add(`📤 Sent to +${m.phone}: «${m.text}» (switch to that customer to see it in her chat)`, 'bot note');
       show(data, node);
       refreshPanels();
     } catch (err) {
@@ -282,6 +284,13 @@
     try {
       const a = await api('POST', '/api/appointments', { ...who(), today: todayValue() });
       add(`(This customer now has "${a.name}" on ${a.date} at ${a.time})`, 'bot note');
+      refreshPanels();
+    } catch (err) { add(`Error: ${err.message}`, 'bot note'); }
+  };
+  $('ownerDemo').onclick = async () => {
+    try {
+      const r = await api('POST', '/api/demo/owner', { businessId: $('business').value, today: todayValue() });
+      add(r.created ? `(Owner demo data added: ${r.appointments} appointments, ${r.inbox} questions in the inbox, ${r.waitlist} on the waiting list. Type login:owner, then «¿qué tengo hoy?» or «¿qué me han preguntado?».)` : '(The owner demo data is already in this salon.)', 'bot note');
       refreshPanels();
     } catch (err) { add(`Error: ${err.message}`, 'bot note'); }
   };

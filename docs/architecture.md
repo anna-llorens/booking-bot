@@ -160,17 +160,34 @@ The salon owner manages the salon from the same WhatsApp chat: agenda, closures,
 
 | Intent | Example | Effect |
 |---|---|---|
-| `agenda` | "¿qué tengo hoy?", "citas de mañana", "¿cuántas citas tengo esta semana?" | Time, customer, service and duration; a day ends with its free stretches |
-| `inbox`, `waitlist` | "¿qué me han preguntado?", "¿quién hay en lista de espera?" | Open handovers; the waiting list |
+| `agenda` | "¿qué tengo hoy?", "citas de mañana", "¿cuántas citas tengo esta semana?", "citas del mes" | Time, customer, service and duration; a day ends with its free stretches |
+| `inbox` | "¿qué me han preguntado?", then a number; "ver más", "ver todos" | Numbered list of open handovers (5 at a time). One message shows what the bot had said before it and three options: **1. Ignorar**, **2. Responder a la clienta**, **3. Responder y que el bot lo conteste solo** |
+| `ignore` | "ignora 1, 3 y 5", "ignora todos" | Closes those handovers (several are confirmed; option 1 on one message is applied at once). Undo reopens them |
+| `replyChoice`, `teachChoice` | option 2 / 3, or "responder", "las dos" | Asks for the text, confirms, then saves it as a message to that customer (`outbound` in the result, for the WhatsApp channel) and closes the handover. With 3, also adds it to `settings.learnedAnswers` |
+| `learnedAnswers`, `forgetAnswer` | "¿qué respuestas has aprendido?", "olvida la respuesta 2" | The answers the bot now gives on its own |
+| `waitlist` | "¿quién hay en lista de espera?" | The waiting list |
+| `serviceInfo` | "queratina" | Duration and price of that service |
 | `hours` | "¿qué horario tengo?" | Weekly hours, upcoming closures and special days |
 | `closeDate`, `closeRange`, `openDate` | "el jueves cierro", "cierro del 10 al 24 de agosto por vacaciones", "al final el jueves abro" | `closedDates`, `closedRanges` (re-opening a day inside a range splits it) |
 | `setDayHours` | "mañana abro a las 10", "el viernes de 10 a 14" | `dateOverrides` for that day |
 | `setWeeklyHours` | "a partir de ahora los sábados cierro a las 14", "los lunes ya no abro" | `hours` (written out in full if the salon still used `opens`/`closes`) |
-| `getPrice`, `setPrice`, `getDuration`, `setDuration` | "¿cuánto cobro por las mechas?", "sube el tinte a 38", "el tinte dura 2 horas" | The service's `price` / `duration` |
+| `getPrice`, `setPrice`, `getDuration`, `setDuration` | "¿cuánto cobro por las mechas?", "sube el tinte a 38", "queratina 4h", "el tinte dura 2 horas" | The service's `price` / `duration` |
 | `disableService`, `enableService` | "ya no hago permanente", "vuelvo a hacer permanente" | The service's `active` flag (inactive services are not offered to customers) |
 | `bookManual` | "apunta a Lucía mañana a las 10 para corte" | An appointment for a customer with no phone (one per name, phone `manual:lucia`); a taken time offers others |
 | `cancelAppointment`, `moveAppointment` | "cancela la cita de Ana del jueves", "mueve la de las 17:00 del viernes a las 18:00" | Asks which one if several match. The customer is not messaged: the owner tells her |
 | `help`, `yes`, `no`, `undo`, `logout` | "ayuda", "sí", "no", "deshacer", "salir" | — |
+
+**Learned answers.** `settings.learnedAnswers` is a list of `[{ question, text, answer }]`, where `question` is normalized.
+- The customer bot uses one (`src/reply/learned.js`) only when it would otherwise hand the message over, and only for the same message or a very close one (accents, case, typos up to 15 % of the length; no AI).
+- Her answer replaces "Te contestaremos enseguida", and a booking in progress carries on after it.
+
+**Noise never reaches the inbox.** One or two letters ("p"), one letter repeated ("sss"), "login", and made-up words get "Perdona, no te he entendido" instead of a handover.
+
+**Demo data.** `seedOwnerDemo()` in `src/demo-data.js` (the test UI's **Owner demo data** button, `POST /api/demo/owner`) adds to a salon, once:
+- 5 named customers;
+- appointments over the next open days;
+- 5 questions in the inbox, each with the bot's message before it;
+- 2 people on the waiting list.
 
 `settings.dateOverrides` (`{ "2026-11-11": [["10:00","20:00"]] }`) wins over the weekly hours for that one day. It is read in `hours.dayHours()`, so free slots, `closedReason` and the customer's hours answers all respect it.
 

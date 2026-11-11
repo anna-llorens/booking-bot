@@ -6,9 +6,11 @@
 //
 //   understandOwner(message, { today, catalog }) → { intent, ...fields }
 //
-// intent: agenda | inbox | waitlist | hours | getPrice | getDuration | setPrice | setDuration
+// intent: agenda | inbox | inboxMore | ignore | replyChoice | teachChoice | learnedAnswers | forgetAnswer
+//         | waitlist | hours | serviceInfo | getPrice | getDuration | setPrice | setDuration
 //         | disableService | enableService | closeDate | closeRange | openDate | setDayHours | setWeeklyHours
 //         | bookManual | cancelAppointment | moveAppointment | help | yes | no | undo | logout | null
+// A bare number ("2") comes as intent null with `number`: its meaning depends on what the bot just showed.
 const {
   normalize, basicNormalize, WEEKDAYS, MONTHS, NUMBER_WORDS, detectDate, detectTime, detectServices,
 } = require('../understand');
@@ -25,6 +27,15 @@ const NO = /^(no|nop|nope|mejor no|no gracias|dejalo|olvidalo|cancela|cancelalo|
 const LOGOUT = /^(logout|log out|salir|salgo|cerrar sesion|salir del modo (duena|dueno)|modo (clienta|cliente))$/;
 const UNDO = /^(deshacer|deshaz|deshazlo|deshaz (eso|el ultimo cambio|lo ultimo)|undo|vuelve atras|anula (el )?ultimo cambio)$/;
 const HELP = /^(ayuda|help|menu|ejemplos|que (puedo|se puede) (hacer|decir|pedir|preguntar|cambiar)( aqui)?|como funciona( esto)?)$/;
+
+// ---- the inbox: "ver más", "ignora 1, 3 y 5", "ignora todos", and the options for one message ----
+const MORE = /^(ver |dame |ensename |y )?(mas|mas mensajes|siguientes|los siguientes|otros|el resto|resto|sigue)$|^(ver|leer|ensename|dame|lee|muestrame) (todos|todo|todas)( los mensajes)?$/;
+const IGNORE = /^(ignora|ignorar|ignoralo|ignorala|ignoralos|ignoralas|borra|borrar|borralo|borralos|quita|quitar|quitalo|quitalos|elimina|eliminar|eliminalo|eliminalos|descarta|descartar|descartalo|archiva|archivar|archivalo)( (el|la|los|las|este|ese|esta|esa|estos|esos|mensajes?|numeros?|todos|todas|todo|de|del|y|e|\d+))*$/;
+const IGNORE_SOME = /\b(borrar|ignorar|quitar|eliminar|descartar) (algunos|algunas|varios|varias|unos|unas)\b/;
+const REPLY_CHOICE = /^(responder|responde|respondele|responderle|contestar|contesta|contestale|contestarle|escribirle|escribele)( (a la clienta|a ella|solo))?$/;
+const TEACH_CHOICE = /^(ensenar|ensena|ensenale|aprender|aprende|responder y ensenar|contestar y ensenar|responder y aprender|las dos|ambas|las dos cosas|responder y que (el bot )?lo (conteste|responda) solo( la proxima vez)?)$/;
+const LEARNED = /\b(respuestas (aprendidas|guardadas|ensenadas)|que (respuestas )?(has aprendido|te he ensenado|sabes contestar)|que has aprendido)\b/;
+const FORGET = /^(olvida|olvidate de|borra|quita|elimina) (la )?(respuesta )?(aprendida |numero )?(\d{1,2})$/;
 
 // ---- queries ----
 const INBOX = /\b(que me han (preguntado|escrito|dicho|pedido)|bandeja|mensajes (pendientes|sin (contestar|responder|leer))|preguntas (pendientes|sin contestar)|que (hay|tengo) (pendiente|sin contestar)|quien me ha escrito|pendientes de contestar)\b/;
@@ -216,6 +227,13 @@ function splitMove(t) {
 }
 
 function agendaRange(t, today) {
+  if (/\b(mes que viene|proximo mes|mes siguiente)\b/.test(t)) {
+    const first = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    return { from: iso(first), to: iso(new Date(first.getFullYear(), first.getMonth() + 1, 0)), range: 'nextMonth' };
+  }
+  if (/\b(este mes|del mes|el mes|de mes|en el mes|todo el mes)\b/.test(t)) {
+    return { from: iso(today), to: iso(new Date(today.getFullYear(), today.getMonth() + 1, 0)), range: 'month' };
+  }
   if (/\b(semana que viene|proxima semana|semana siguiente)\b/.test(t)) {
     const monday = addDays(today, (8 - today.getDay()) % 7 || 7);
     return { from: iso(monday), to: iso(addDays(monday, 6)), range: 'nextWeek' };
@@ -240,6 +258,15 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   if (YES.test(t)) return r({ intent: 'yes' });
   if (NO.test(t)) return r({ intent: 'no' });
 
+  if (MORE.test(t)) return r({ intent: 'inboxMore', all: /\b(todos|todo|todas)\b/.test(t) });
+  if (FORGET.test(t) && /\b(olvida|respuesta)/.test(t)) return r({ intent: 'forgetAnswer', number: +t.match(FORGET)[5] });
+  if (IGNORE.test(t)) {
+    return r({ intent: 'ignore', numbers: [...t.matchAll(/\d+/g)].map(m => +m[0]), all: /\b(todos|todas|todo)\b/.test(t) });
+  }
+  if (IGNORE_SOME.test(t)) return r({ intent: 'ignore', numbers: [], all: false, ask: true });
+  if (REPLY_CHOICE.test(t)) return r({ intent: 'replyChoice' });
+  if (TEACH_CHOICE.test(t)) return r({ intent: 'teachChoice' });
+  if (LEARNED.test(t)) return r({ intent: 'learnedAnswers' });
   if (INBOX.test(t)) return r({ intent: 'inbox' });
   if (WAITLIST.test(t)) return r({ intent: 'waitlist' });
   if (HOURS_QUERY.test(t)) return r({ intent: 'hours' });
@@ -270,10 +297,14 @@ function understandOwner(message, { today, catalog = [] } = {}) {
     const asking = /\?/.test(message) || /^(cuanto|a cuanto|que precio|cual es el precio|precio)\b/.test(t);
     if (DURATION_V.test(t) && duration && !asking) return r({ intent: 'setDuration', serviceId: service, duration });
     if (DURATION_V.test(t) && (asking || !duration) && /\b(cuanto|cuantos|que)\b/.test(t)) return r({ intent: 'getDuration', serviceId: service });
+    // "queratina 4h", "la queratina son 4 horas", "ponle 3 horas a la queratina"
+    if (duration && price == null && !asking && !date) return r({ intent: 'setDuration', serviceId: service, duration });
     if (price != null && !asking) return r({ intent: 'setPrice', serviceId: service, price });
     if (QUESTION.test(t) && price == null) return r({ intent: 'getPrice', serviceId: service });
     if (ENABLE.test(t)) return r({ intent: 'enableService', serviceId: service });
     if (DISABLE.test(t)) return r({ intent: 'disableService', serviceId: service });
+    // just the service ("queratina", "la manicura?"): its duration and price
+    if (!date && t.split(' ').length <= 4 && !CLOSE_V.test(t) && !OPEN_V.test(t)) return r({ intent: 'serviceInfo', serviceId: service });
   }
 
   // closures and opening hours
@@ -299,8 +330,9 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   if (AGENDA.test(t)) return r({ intent: 'agenda', ...agendaRange(t, today) });
 
   // bare pieces: a follow-up ("¿y mañana?") or the answer to a question the bot asked
+  const number = t.match(/^(?:el |la |numero |opcion )?(\d{1,2})$/);
   return r({
-    intent: null, date: date && iso(date), time: detectTime(t), serviceId: service, price, duration,
+    intent: null, number: number ? +number[1] : null, date: date && iso(date), time: detectTime(t), serviceId: service, price, duration,
     name: parseName(message, catalog, { afterVerb: false }),
   });
 }

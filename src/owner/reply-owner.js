@@ -18,6 +18,7 @@ const H = require('../hours');
 const { understandOwner } = require('./understand-owner');
 const { closedReason } = require('../reply/slots');
 const { euros, fromISODate } = require('../reply/format');
+const { normalize } = require('../understand');
 
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -42,9 +43,18 @@ function dayText(isoDate, today) {
 const rangeText = (from, to) => `del ${dayName(from)} al ${dayName(to)}`;
 const hoursText = intervals => (intervals.length ? H.intervalsText(intervals) : 'cerrado');
 
-const customerName = a => a.customerName || (a.customerPhone && !a.customerPhone.startsWith('manual:') ? `+${a.customerPhone}` : 'sin nombre');
-const apptLine = a => `• ${a.time} ${customerName(a)} — ${a.name} (${a.duration} min)`;
-const apptLineWithDay = a => `• ${dayName(a.date)}, ${a.time} ${customerName(a)} — ${a.name}`;
+// "34600000004" → "+34 600 000 004"; customers booked by hand have no phone
+const formatPhone = p => (!p || p.startsWith('manual:') ? null : /^34\d{9}$/.test(p) ? `+34 ${p.slice(2, 5)} ${p.slice(5, 8)} ${p.slice(8)}` : `+${p}`);
+const customerName = a => a.customerName || formatPhone(a.customerPhone) || 'sin nombre';
+// old appointments booked as "lo de siempre" without knowing what that was
+const apptService = a => (a.service === 'LAST' ? 'servicio sin concretar («lo de siempre»)' : a.name);
+const apptLine = a => `• ${a.time} ${customerName(a)} — ${apptService(a)} (${durationText(a.duration)})`;
+const apptLineWithDay = a => `• ${dayName(a.date)}, ${a.time} ${customerName(a)} — ${apptService(a)}`;
+// 45 → "45 min", 120 → "2 h", 90 → "1 h 30 min"
+const durationText = m => (m == null ? 'sin duración' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`);
+// who wrote a message in the inbox
+const sender = h => (h.customerName ? `${h.customerName} (${formatPhone(h.phone) ?? 'sin teléfono'})` : formatPhone(h.phone) ?? 'sin teléfono');
+const INBOX_PAGE = 5;
 
 const serviceName = s => s.name;
 const findService = (catalog, id) => catalog.find(s => s.id === id) ?? null;
@@ -54,9 +64,10 @@ const HELP = [
   '📅 Agenda: «¿qué tengo hoy?», «citas de mañana», «¿cuántas citas tengo esta semana?»',
   '🔒 Cierres: «el jueves cierro», «cierro del 10 al 24 de agosto por vacaciones», «al final el jueves abro»',
   '🕘 Horarios: «mañana abro a las 10», «a partir de ahora los sábados cierro a las 14», «¿qué horario tengo?»',
-  '💶 Servicios: «sube el tinte a 38», «¿cuánto cobro por las mechas?», «el tinte dura 2 horas», «ya no hago permanente»',
+  '💶 Servicios: «queratina» (ver duración y precio), «queratina 4h», «sube el tinte a 38», «¿cuánto cobro por las mechas?», «ya no hago permanente»',
   '✍️ Citas: «apunta a Lucía mañana a las 10 para corte», «cancela la cita de Ana del jueves», «mueve la de las 17:00 del viernes a las 18:00»',
-  '📥 «¿qué me han preguntado?», «¿quién hay en lista de espera?»',
+  '📥 «¿qué me han preguntado?» y luego un número: ignorar, responder a la clienta o enseñarle la respuesta al bot · «ignora todos» · «¿qué respuestas has aprendido?»',
+  '⏳ «¿quién hay en lista de espera?»',
   '↩️ «deshacer» deshace el último cambio · 👋 «salir» para salir del modo dueña',
 ].join('\n');
 const NOT_UNDERSTOOD = 'No te he entendido 😅 Escribe *ayuda* para ver ejemplos.';
@@ -113,8 +124,8 @@ function respondOwner(message, state = {}, options = {}) {
   const out = (reply, extra = {}) => ({ reply: tidy(reply), state: newState, changes: [], understanding: u, ...extra });
 
   // Ask before changing anything: "¿Cierro el jueves 12 de noviembre? (sí / no)"
-  const confirm = (change, question, done, warning = '') => {
-    newState = { ...newState, pending: { kind: 'confirm', changes: [change], done } };
+  const confirm = (change, question, done, warning = '', after = null) => {
+    newState = { ...newState, pending: { kind: 'confirm', changes: [change], done, after } };
     return out(`${warning ? warning + '\n\n' : ''}${question} (sí / no)`);
   };
   // "Ojo: ese día tienes 2 citas:" + the list + "Las citas NO se cancelan solas…"
@@ -127,12 +138,60 @@ function respondOwner(message, state = {}, options = {}) {
 
   // ---- answers to the bot's own questions ----
   if (pending?.kind === 'confirm') {
+    // after an inbox action, back to the list: "Dime otro número…"
+    const back = pending.after ? afterInbox(pending.after, pending.changes) : '';
     if (u.intent === 'yes') {
       newState.lastTopic = 'changed';
-      return out(`Hecho ✅ ${pending.done} ${UNDO_HINT}`, { changes: pending.changes });
+      return out(`Hecho ✅ ${pending.done} ${UNDO_HINT}${back}`, { changes: pending.changes });
     }
-    if (u.intent === 'no') return out('Vale, no cambio nada 👍');
+    if (u.intent === 'no') return out(`Vale, no cambio nada 👍${back}`);
   }
+
+  // ---- the inbox: a list, then one message with its options, then the reply text ----
+  if (pending?.kind === 'replyText') {
+    const h = inbox.find(x => x.id === pending.handoverId);
+    if (u.intent === 'no' || /^(cancela|cancelar|dejalo|nada)$/.test(u.normalizedText)) return out(`Vale, no le respondo 👍${afterInbox(pending.after)}`);
+    if (!h) return out('Ese mensaje ya no está pendiente 🤔');
+    if (!['undo', 'help', 'logout'].includes(u.intent)) return replyToCustomer(h, message.trim(), pending.teach, pending.after);
+  }
+  if (pending?.kind === 'inboxItem') {
+    const h = inbox.find(x => x.id === pending.handoverId);
+    const choice = u.number ?? null;
+    if (h && (choice === 1 || (u.intent === 'ignore' && !u.numbers.length && !u.all))) return ignore([h], pending.after, false);
+    if (h && (choice === 2 || u.intent === 'replyChoice')) return askReplyText(h, false, pending.after);
+    if (h && (choice === 3 || u.intent === 'teachChoice')) return askReplyText(h, true, pending.after);
+    if (u.intent === 'inboxMore' || u.intent === 'inbox') return showInbox(0, u.all);
+    if (!h) return out('Ese mensaje ya no está pendiente 🤔 Escribe «¿qué me han preguntado?» para ver los que quedan.');
+  }
+  if (pending?.kind === 'inbox') {
+    if (u.intent === 'inboxMore') return showInbox(u.all ? 0 : pending.shown, u.all, pending.ids);
+    if (!u.intent && u.number) {
+      const id = pending.ids[u.number - 1];
+      const h = inbox.find(x => x.id === id);
+      if (!id) return out(`No tengo el número ${u.number} 🤔 Van del 1 al ${pending.ids.length}.`, { state: (newState = { ...newState, pending }) });
+      if (!h) return out(`El ${u.number} ya no está pendiente. Dime otro número.`, { state: (newState = { ...newState, pending }) });
+      return showItem(h, pending);
+    }
+  }
+  if (u.intent === 'ignore') {
+    const list = pending?.kind === 'inbox' || pending?.kind === 'inboxItem' ? (pending.after ?? pending) : null;
+    if (u.ask) {
+      if (list) newState = { ...newState, pending: list };
+      return out(list ? '¿Cuáles? Dime los números, por ejemplo «ignora 1, 3 y 5».' : 'Primero te enseño los mensajes: escribe «¿qué me han preguntado?» y luego «ignora 1, 3 y 5».');
+    }
+    if (u.all) {
+      if (!inbox.length) return out('No tienes mensajes pendientes 🎉');
+      return ignore(inbox, null, true);
+    }
+    if (u.numbers.length) {
+      const ids = list?.ids ?? inbox.map(h => h.id);
+      const chosen = u.numbers.map(n => inbox.find(h => h.id === ids[n - 1])).filter(Boolean);
+      if (!chosen.length) return out('No encuentro esos mensajes 🤔 Escribe «¿qué me han preguntado?» para ver la lista con sus números.');
+      return ignore(chosen, list, true);
+    }
+    return out('¿Qué mensajes ignoro? Por ejemplo «ignora 1, 3 y 5» o «ignora todos».');
+  }
+  if (u.intent === 'inboxMore' && inbox.length) return showInbox(0, u.all);
   if (pending?.kind === 'choose') {
     const n = u.normalizedText.match(/^(?:la |el )?(\d)$|^(?:la )?(primera|segunda|tercera|cuarta)$/);
     const index = n ? (n[1] ? +n[1] : ['primera', 'segunda', 'tercera', 'cuarta'].indexOf(n[2]) + 1) - 1 : -1;
@@ -147,7 +206,7 @@ function respondOwner(message, state = {}, options = {}) {
     if (!u.intent) return out(`¿Cuál de ellas? Dime el número (1-${options_.length}).`, { state: (newState = { ...newState, pending }) });
   }
   if (pending?.kind === 'draft' && !['yes', 'no', 'undo', 'help', 'logout'].includes(u.intent) &&
-      (!u.intent || u.intent === 'agenda' || u.intent === pending.action)) {
+      (!u.intent || u.intent === 'agenda' || u.intent === 'serviceInfo' || u.intent === pending.action)) {
     const d = { ...pending.draft };
     const before = JSON.stringify(d);
     if (pending.asking === 'name' && !u.intent && !u.date && !u.time && !u.serviceId) d.name = message.trim().replace(/[.!?¿¡]/g, '').replace(/^\w/, c => c.toUpperCase());
@@ -171,10 +230,20 @@ function respondOwner(message, state = {}, options = {}) {
     newState.lastTopic = 'agenda';
     return out(agenda(u.from ? u : { date: u.date ?? todayISO }));
   }
-  if (u.intent === 'inbox') {
-    if (!inbox.length) return out('No tienes mensajes pendientes 🎉');
-    const lines = inbox.slice(0, 10).map(h => `• +${h.phone}: «${h.message}»`);
-    return out(`Tienes ${plural(inbox.length, 'mensaje', 'mensajes')} sin contestar:\n${lines.join('\n')}${inbox.length > 10 ? `\n… y ${inbox.length - 10} más` : ''}`);
+  if (u.intent === 'inbox') return showInbox(0, false);
+  if (u.intent === 'learnedAnswers') {
+    const learned = business.learnedAnswers ?? [];
+    if (!learned.length) return out('Todavía no me has enseñado ninguna respuesta. En «¿qué me han preguntado?», elige un mensaje y la opción 3.');
+    newState = { ...newState, pending: { kind: 'learned' } };
+    return out(`Contesto yo sola a estos mensajes:\n${learned.map((l, i) => `${i + 1}) «${l.text}» → «${l.answer}»`).join('\n')}\n\nPara que deje de usar una: «olvida la respuesta 2».`);
+  }
+  if (u.intent === 'forgetAnswer') {
+    const learned = business.learnedAnswers ?? [];
+    const item = learned[u.number - 1];
+    if (!item) return out(learned.length ? `No tengo la respuesta ${u.number} 🤔 Van del 1 al ${learned.length}.` : 'No tengo respuestas aprendidas.');
+    return confirm(
+      { type: 'forgetAnswer', set: { learnedAnswers: learned.filter(l => l !== item) }, previous: { learnedAnswers: learned }, summary: `olvidar la respuesta a «${item.text}»` },
+      `¿Dejo de contestar sola a «${item.text}»? A partir de ahora te llegará a ti.`, `Olvidada: «${item.text}» vuelve a llegarte a ti.`);
   }
   if (u.intent === 'waitlist') {
     if (!waitlist.length) return out('No hay nadie en lista de espera.');
@@ -188,14 +257,18 @@ function respondOwner(message, state = {}, options = {}) {
   if (u.intent === 'hours') return out(hoursOverview());
 
   // ---- catalog ----
-  if (['getPrice', 'getDuration', 'setPrice', 'setDuration', 'disableService', 'enableService'].includes(u.intent)) {
+  if (['serviceInfo', 'getPrice', 'getDuration', 'setPrice', 'setDuration', 'disableService', 'enableService'].includes(u.intent)) {
     const s = findService(catalog, u.serviceId);
     if (!s) return out(NOT_UNDERSTOOD);
     const off = s.active === false ? ' (ahora no lo ofreces)' : '';
+    const short = s.synonyms?.[0] ?? serviceName(s).toLowerCase();
+    if (u.intent === 'serviceInfo') {
+      return out(`${serviceName(s)}${off}: ${durationText(s.duration)} · ${s.price != null ? euros(s.price) : 'sin precio'}.\nPara cambiarlo: «${short} ${s.duration === 240 ? '3h' : '4h'}» o «${short} a ${s.price != null ? s.price + 5 : 40} €».`);
+    }
     if (u.intent === 'getPrice') {
       return out(s.price != null ? `${serviceName(s)}${off}: ${euros(s.price)}.` : `${serviceName(s)} no tiene precio puesto. Si quieres, dime por ejemplo «${serviceName(s).toLowerCase()} a 30 €».`);
     }
-    if (u.intent === 'getDuration') return out(s.duration ? `${serviceName(s)}${off}: ${s.duration} minutos.` : `${serviceName(s)} no tiene duración puesta.`);
+    if (u.intent === 'getDuration') return out(s.duration ? `Ahora mismo ${serviceName(s)}${off} dura ${durationText(s.duration)}.` : `${serviceName(s)} no tiene duración puesta. Dime por ejemplo «${short} 2h».`);
     if (u.intent === 'setPrice') {
       if (u.price <= 0 || u.price > 2000) return out(`¿${euros(u.price)}? Me parece raro 🤔 Dímelo otra vez, por ejemplo «${serviceName(s).toLowerCase()} a 30 €».`);
       if (s.price === u.price) return out(`${serviceName(s)} ya está a ${euros(u.price)} 😊`);
@@ -206,11 +279,11 @@ function respondOwner(message, state = {}, options = {}) {
     }
     if (u.intent === 'setDuration') {
       if (u.duration < 5 || u.duration > 600) return out(`¿${u.duration} minutos? Me parece raro 🤔 Dímelo otra vez, por ejemplo «el tinte dura hora y media».`);
-      if (s.duration === u.duration) return out(`${serviceName(s)} ya dura ${u.duration} minutos 😊`);
+      if (s.duration === u.duration) return out(`${serviceName(s)} ya dura ${durationText(u.duration)} 😊`);
       return confirm(
-        { type: 'setDuration', serviceId: s.id, duration: u.duration, previous: { duration: s.duration ?? null }, summary: `${serviceName(s)} dura ${u.duration} min` },
-        `¿Cambio ${serviceName(s)} a ${u.duration} minutos?${s.duration ? ` (ahora son ${s.duration})` : ''}`,
-        `${serviceName(s)} ahora dura ${u.duration} minutos. Las citas ya reservadas mantienen su duración.`);
+        { type: 'setDuration', serviceId: s.id, duration: u.duration, previous: { duration: s.duration ?? null }, summary: `${serviceName(s)} dura ${durationText(u.duration)}` },
+        `${s.duration ? `Ahora mismo ${serviceName(s)} dura ${durationText(s.duration)}. ` : ''}¿Lo cambio a ${durationText(u.duration)}?`,
+        `Ahora ${serviceName(s)} dura ${durationText(u.duration)}${s.duration ? ` (antes ${durationText(s.duration)})` : ''}. Las citas ya reservadas mantienen su duración.`);
     }
     if (u.intent === 'disableService') {
       if (s.active === false) return out(`${serviceName(s)} ya no se ofrece 😊`);
@@ -337,7 +410,8 @@ function respondOwner(message, state = {}, options = {}) {
   if (u.intent === 'undo') {
     if (!lastChange) return out('No hay ningún cambio que deshacer.');
     newState.lastTopic = 'undo';
-    return out(`Deshecho ↩️ He vuelto atrás: ${lastChange.data?.summary ?? lastChange.type}.`, { changes: [{ type: 'undo', changeId: lastChange.id, summary: lastChange.data?.summary ?? lastChange.type }] });
+    const sent = lastChange.type === 'replyHandover' ? ' El mensaje a la clienta ya se había enviado (eso no se puede deshacer), pero vuelve a estar en pendientes.' : '';
+    return out(`Deshecho ↩️ He vuelto atrás: ${lastChange.data?.summary ?? lastChange.type}.${sent}`, { changes: [{ type: 'undo', changeId: lastChange.id, summary: lastChange.data?.summary ?? lastChange.type }] });
   }
 
   // a bare day after a question about the agenda was handled above; anything else is not understood
@@ -345,10 +419,74 @@ function respondOwner(message, state = {}, options = {}) {
 
   // ---- helpers that use this message's data ----
 
+  // "Tienes 39 mensajes sin contestar (te enseño 1-5):" + numbered list. Numbers stay the same until a new list.
+  function showInbox(from, all, ids = inbox.map(h => h.id)) {
+    const open = ids.map(id => inbox.find(h => h.id === id)).filter(Boolean);
+    if (!open.length) return out('No tienes mensajes pendientes 🎉');
+    const pos = h => ids.indexOf(h.id) + 1;
+    const rest = all ? open : open.filter(h => pos(h) > from).slice(0, INBOX_PAGE);
+    if (!rest.length) return showInbox(0, false);
+    const shown = pos(rest.at(-1));
+    newState = { ...newState, pending: { kind: 'inbox', ids, shown } };
+    const head = from === 0 || all
+      ? `Tienes ${plural(open.length, 'mensaje', 'mensajes')} sin contestar${!all && open.length > rest.length ? ` (te enseño ${rest.length})` : ''}:`
+      : 'Más mensajes sin contestar:';
+    const more = !all && open.some(h => pos(h) > shown);
+    const tips = ['Dime un número para ver qué hago con él', more && '«ver más» o «ver todos»', '«ignora 1, 3 y 5» o «ignora todos»'].filter(Boolean);
+    return out(`${head}\n${rest.map(h => `${pos(h)}) ${sender(h)}: «${h.message}»`).join('\n')}\n\n${tips.join(' · ')}.`);
+  }
+
+  // One message and what to do with it
+  function showItem(h, list) {
+    newState = { ...newState, pending: { kind: 'inboxItem', handoverId: h.id, after: list } };
+    const before = h.before ? `\nAntes, el bot le había dicho: «${h.before.length > 140 ? h.before.slice(0, 140) + '…' : h.before}»` : '';
+    return out(`${sender(h)} escribió: «${h.message}»${before}\n\n¿Qué hago?\n1. Ignorar\n2. Responder a la clienta\n3. Responder y que el bot lo conteste solo la próxima vez`);
+  }
+
+  function askReplyText(h, teach, list) {
+    newState = { ...newState, pending: { kind: 'replyText', handoverId: h.id, teach, after: list } };
+    return out(`Escribe lo que le contesto a ${sender(h)}${teach ? ' (y lo que contestaré a quien escriba lo mismo)' : ''}:`);
+  }
+
+  function replyToCustomer(h, text, teach, list) {
+    const question = normalize(h.message);
+    const learned = business.learnedAnswers ?? [];
+    const change = {
+      type: 'replyHandover', handoverId: h.id, customerId: h.customerId, phone: h.phone, text, teach,
+      summary: `responder a ${sender(h)}${teach ? ' y aprender la respuesta' : ''}`,
+      ...(teach ? { set: { learnedAnswers: [...learned.filter(l => l.question !== question), { question, text: h.message, answer: text }] } } : {}),
+    };
+    const short = teach && question.split(' ').length <= 3
+      ? '\nOjo: es un mensaje corto. Lo contestaré igual a cualquier clienta que escriba eso, aunque hable de otra cosa.' : '';
+    return confirm(change,
+      `¿Le envío esto a ${sender(h)}?\n«${text}»${teach ? `\nY a partir de ahora, si alguien escribe «${h.message}», contestaré eso yo sola.${short}` : ''}`,
+      `Enviado a ${sender(h)}.${teach ? ' Y aprendido 🧠' : ''}`, '', list);
+  }
+
+  // Ignore messages: one chosen from its options goes at once (that was the choice), several are confirmed
+  function ignore(list, back, ask) {
+    const change = { type: 'ignoreHandovers', ids: list.map(h => h.id), summary: `ignorar ${plural(list.length, 'mensaje', 'mensajes')}` };
+    if (ask) {
+      return confirm(change, `¿Quito ${list.length === 1 ? `el mensaje de ${sender(list[0])}` : `estos ${list.length} mensajes`} de pendientes? Siguen en el historial de cada clienta.`,
+        `${list.length === 1 ? 'Mensaje ignorado' : `${list.length} mensajes ignorados`}.`, '', back && list.length < inbox.length ? back : null);
+    }
+    return out(`Ignorado ✅ ${UNDO_HINT}${back ? afterInbox(back, [change]) : ''}`, { changes: [change] });
+  }
+
+  // After acting on a message: how many are left and how to go on with the same numbers
+  function afterInbox(list, changes = []) {
+    if (!list) return '';
+    const done = new Set(changes.flatMap(c => (c.type === 'ignoreHandovers' ? c.ids : c.type === 'replyHandover' ? [c.handoverId] : [])));
+    const left = list.ids.filter(id => !done.has(id) && inbox.some(h => h.id === id));
+    if (!left.length) return '\nNo quedan mensajes pendientes 🎉';
+    newState = { ...newState, pending: { ...list, kind: 'inbox' } };
+    return `\nQuedan ${left.length}. Dime otro número, «ver más» o «¿qué me han preguntado?» para ver la lista otra vez.`;
+  }
+
   function agenda({ date, from, to, range }) {
     if (from) {
       const list = appointments.filter(a => a.date >= from && a.date <= to).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
-      const label = range === 'nextWeek' ? 'La semana que viene' : 'Esta semana';
+      const label = { nextWeek: 'La semana que viene', month: 'Este mes', nextMonth: 'El mes que viene' }[range] ?? 'Esta semana';
       if (!list.length) return `${label} (${rangeText(from, to)}) no tienes citas.`;
       const days = [...new Set(list.map(a => a.date))];
       return `${label} tienes ${plural(list.length, 'cita', 'citas')}:\n` +

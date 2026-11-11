@@ -100,4 +100,75 @@ async function seedDemoData(store) {
   return true;
 }
 
-module.exports = { DEMO_BUSINESSES, seedDemoData };
+// ---- owner-mode demo data: named customers, appointments this week, questions in the inbox, a waiting list ----
+
+const OWNER_DEMO_CUSTOMERS = [
+  ['34600100001', 'Ana García'], ['34600100002', 'Marta López'], ['34600100003', 'Lucía Pérez'],
+  ['34600100004', 'Carmen Ruiz'], ['34600100005', 'Laura Sánchez'],
+];
+// [customer index, service id, open day (0 = today), time wanted]
+const OWNER_DEMO_APPOINTMENTS = [
+  [0, 'corte_mujer', 0, '17:00'], [1, 'tinte', 0, '18:00'], [2, 'manicura_semipermanente', 1, '10:00'],
+  [3, 'mechas', 1, '16:30'], [4, 'corte', 2, '11:00'], [0, 'peinado', 2, '18:30'], [1, 'pedicura', 3, '10:30'],
+  [2, 'queratina', 4, '09:30'], [3, 'depilacion_cejas', 4, '12:00'],
+];
+// [customer index, what the bot had said, her message (handed to the owner)]
+const OWNER_DEMO_INBOX = [
+  [3, '¡Hola! 😊 ¿En qué te puedo ayudar? Te puedo dar cita, cambiarla o anularla.', '¿hacéis descuento a estudiantes?'],
+  [4, '¡Perfecto! Te apunto para corte. ¡Hasta entonces! 😊', '¿vendéis productos?'],
+  [0, '¡A ti! 😊', 'me dejé el paraguas el otro día, ¿lo tenéis?'],
+  [1, '¡Hola! 😊 ¿En qué te puedo ayudar? Te puedo dar cita, cambiarla o anularla.', '¿tenéis tarjetas regalo?'],
+  [2, 'Para tratamiento de keratina tengo: 1) 09:30  2) 16:30. ¿Cuál te va mejor?', '¿se puede lavar el pelo al día siguiente?'],
+];
+
+// Fills a demo salon for trying owner mode ("¿qué tengo hoy?", "¿qué me han preguntado?"). `now` is the salon's
+// wall-clock time (a Date). Runs once per salon: if the demo customers exist already, it does nothing.
+async function seedOwnerDemo(store, businessId, now, { makeIsFree, closedReason }) {
+  const business = await store.getBusiness(businessId);
+  if (!business) throw new Error(`Unknown business: ${businessId}`);
+  const known = (await store.listAgenda(businessId, {})).some(a => a.customerPhone === OWNER_DEMO_CUSTOMERS[0][0]);
+  if (known) return { created: false };
+  const customers = [];
+  for (const [phone, name] of OWNER_DEMO_CUSTOMERS) {
+    const c = await store.findOrCreateCustomer(businessId, phone);
+    await store.updateCustomer(businessId, c.id, { name });
+    customers.push({ ...c, name });
+  }
+  const services = await store.listServices(businessId);
+  const settings = { ...business.settings, simulatedBusy: false };
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // the next open days, from today
+  const openDays = [];
+  for (let d = new Date(now); openDays.length < 6; d.setDate(d.getDate() + 1)) if (!closedReason(iso(d), settings)) openDays.push(iso(d));
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  let booked = 0;
+  for (const [who, serviceId, day, wanted] of OWNER_DEMO_APPOINTMENTS) {
+    const s = services.find(x => x.id === serviceId) ?? services.find(x => x.group === serviceId.split('_')[0]);
+    if (!s) continue; // not in this salon's catalog
+    const date = openDays[day];
+    const duration = s.duration ?? 30;
+    const isFree = makeIsFree(await store.listAppointments(businessId, { from: date, to: date }), settings);
+    // the time wanted, or the next free one that day
+    for (let m = toMin(wanted); m < 22 * 60; m += 30) {
+      if (!isFree(date, m, duration)) continue;
+      await store.createAppointment({ businessId, customerId: customers[who].id, service: s.group, name: s.name,
+        details: [{ id: s.id, group: s.group, name: s.name, duration }], date, time: hhmm(m), duration });
+      booked++;
+      break;
+    }
+  }
+  for (const [who, before, message] of OWNER_DEMO_INBOX) {
+    const customerId = customers[who].id;
+    await store.addMessage({ businessId, customerId, direction: 'out', text: before });
+    await store.addMessage({ businessId, customerId, direction: 'in', text: message });
+    await store.addMessage({ businessId, customerId, direction: 'out', text: 'Te contestaremos enseguida. ¿Puedo ayudarte en algo más?' });
+    await store.addHandover({ businessId, customerId, message, reason: 'not understood' });
+  }
+  const tinte = services.find(x => x.group === 'tinte') ?? services[0];
+  await store.addToWaitlist({ businessId, customerId: customers[1].id, service: tinte.group, details: [{ id: tinte.id, group: tinte.group, name: tinte.name }], date: openDays[1], timeOfDay: 'morning' });
+  await store.addToWaitlist({ businessId, customerId: customers[4].id, earlier: true });
+  return { created: true, appointments: booked, inbox: OWNER_DEMO_INBOX.length, waitlist: 2 };
+}
+
+module.exports = { DEMO_BUSINESSES, seedDemoData, seedOwnerDemo };

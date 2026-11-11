@@ -11,13 +11,14 @@
 //   POST /api/appointments { businessId, phone, today? }            gives her an appointment, for testing
 // Messages it can't handle are logged to private-data/not-understood.json (customers) and
 // private-data/not-understood-owner.json (owner mode), both git-ignored.
+//   POST /api/demo/owner   { businessId, today? }     owner-mode demo data: named customers, appointments, inbox
 //   GET  /api/overview?businessId=&phone=              calendar, owner inbox, her messages, settings, catalog,
 //                                                      owner-mode changes and whether this phone is in owner mode
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { createStore, DEFAULT_FILE } = require('../src/store');
-const { seedDemoData } = require('../src/demo-data');
+const { seedDemoData, seedOwnerDemo } = require('../src/demo-data');
 const { handleMessage, resetConversation, makeIsFree, normalizePhone } = require('../src/bot');
 const { closedReason, DEFAULT_BUSINESS } = require('../src/reply');
 const { salonNow } = require('../src/timezone');
@@ -227,6 +228,12 @@ const routes = {
   },
 
   'POST /api/appointments': async (req, res, body) => seedAppointment(body),
+
+  'POST /api/demo/owner': async (req, res, { businessId, today }) => {
+    const business = await requireBusiness(businessId);
+    const now = salonNow(parseNow(today), business.settings.timezone ?? DEFAULT_BUSINESS.timezone);
+    return seedOwnerDemo(store, businessId, now, { makeIsFree, closedReason });
+  },
 
   'GET /api/overview': async (req, res, body, url) => {
     const businessId = url.searchParams.get('businessId');

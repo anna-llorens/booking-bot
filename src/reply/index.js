@@ -13,6 +13,7 @@ const { runRules } = require('./rules');
 const { DEFAULT_BUSINESS, newConversation, MAX_MISUNDERSTOOD } = require('./conversation');
 const { isSimulatedBusy, closedReason } = require('./slots');
 const { serviceLabel } = require('./format');
+const { findLearnedAnswer, withLearnedAnswer } = require('./learned');
 
 const HANDLERS = Object.assign({},
   require('./handlers/book'),
@@ -36,6 +37,11 @@ function respond(message, state = newConversation(), options = {}) {
   const previousReply = state?.lastReply ?? null;
   const previousMessage = state?.lastMessage ?? null;
   const result = computeReply(message, state, options);
+  // Something the owner already answered once ("¿hay parking cerca?"): her answer, not a handover
+  const learned = result.handover && findLearnedAnswer(message, options.business?.learnedAnswers);
+  if (learned) {
+    Object.assign(result, { reply: withLearnedAnswer(result.reply, learned.answer), handover: false, fallback: false, learned: true });
+  }
   const misunderstood = result.fallback ? (state?.misunderstood ?? 0) + 1 : 0;
   result.state.misunderstood = misunderstood;
   if (misunderstood > MAX_MISUNDERSTOOD) {

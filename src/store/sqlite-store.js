@@ -292,10 +292,19 @@ class SqliteStore {
     this.db.prepare('INSERT INTO handovers (business_id, customer_id, message, reason, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(businessId, customerId, message, reason ?? null, now());
   }
+  // Newest first. `before`: what the bot had said to her just before that message (context for the owner)
   async listHandovers(businessId, { status = 'open' } = {}) {
-    return this.db.prepare(`SELECT h.*, c.phone FROM handovers h JOIN customers c ON c.id = h.customer_id
+    return this.db.prepare(`SELECT h.*, c.phone, c.name AS customer_name,
+        (SELECT o.text FROM messages o WHERE o.business_id = h.business_id AND o.customer_id = h.customer_id AND o.direction = 'out'
+           AND o.id < (SELECT MAX(i.id) FROM messages i WHERE i.business_id = h.business_id AND i.customer_id = h.customer_id
+                       AND i.direction = 'in' AND i.text = h.message AND i.created_at <= h.created_at)
+         ORDER BY o.id DESC LIMIT 1) AS before
+      FROM handovers h JOIN customers c ON c.id = h.customer_id
       WHERE h.business_id = ? AND h.status = ? ORDER BY h.id DESC`).all(businessId, status)
-      .map(r => ({ id: r.id, customerId: r.customer_id, phone: r.phone, message: r.message, reason: r.reason, status: r.status, createdAt: r.created_at }));
+      .map(r => ({ id: r.id, customerId: r.customer_id, phone: r.phone, customerName: r.customer_name ?? null, message: r.message, reason: r.reason, status: r.status, createdAt: r.created_at, before: r.before ?? null }));
+  }
+  async reopenHandover(businessId, id) {
+    this.db.prepare("UPDATE handovers SET status = 'open' WHERE business_id = ? AND id = ?").run(businessId, id);
   }
   // ---- waiting list ----
   async addToWaitlist({ businessId, customerId, service = null, details = [], date = null, timeOfDay = null, earlier = false }) {

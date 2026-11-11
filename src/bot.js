@@ -144,7 +144,7 @@ async function handleMessage(store, { businessId, phone, text, now: instant }) {
 
 const OWNER_WELCOME = 'Hola 👋 Modo dueña activado. Puedes preguntarme por tu agenda o cambiar horarios, cierres y precios. Escribe *ayuda* para ver ejemplos.';
 const DEV_LOGIN = 'login:owner'; // testing only: works only with settings.devOwnerLogin = true
-const SETTINGS_CHANGES = ['closeDate', 'closeRange', 'openDate', 'setDayHours', 'setWeeklyHours'];
+const SETTINGS_CHANGES = ['closeDate', 'closeRange', 'openDate', 'setDayHours', 'setWeeklyHours', 'forgetAnswer'];
 const CATALOG_CHANGES = { setPrice: 'price', setDuration: 'duration', disableService: 'active', enableService: 'active' };
 
 class SlotTaken extends Error {}
@@ -206,15 +206,18 @@ async function handleOwner(store, { business, customer, state, text, now, today 
 
   let reply = result.reply;
   const applied = [];
+  const outbound = []; // messages to customers (the owner's replies): the WhatsApp channel sends these
   for (const change of result.changes) {
     try {
-      applied.push(await applyOwnerChange(store, business.id, change));
+      const done = await applyOwnerChange(store, business.id, change);
+      applied.push(done);
+      if (done.type === 'replyHandover') outbound.push({ customerId: done.customerId, phone: done.phone, text: done.text });
     } catch (err) {
       if (!(err instanceof SlotTaken)) throw err;
       reply = 'Vaya, esa hora se acaba de ocupar 😔 No he cambiado nada. Dime otra hora.';
     }
   }
-  return finish({ ...state, ownerMode: true, owner: result.state }, reply, intent, { changes: applied, fallback: !!result.fallback });
+  return finish({ ...state, ownerMode: true, owner: result.state }, reply, intent, { changes: applied, outbound, fallback: !!result.fallback });
 }
 
 // Applies one confirmed change and records it (owner_changes) with what it replaced
@@ -250,6 +253,16 @@ async function applyOwnerChange(store, businessId, change) {
     }
   } else if (change.type === 'cancelAppointment') {
     await store.cancelAppointment(businessId, change.appointmentId);
+  } else if (change.type === 'ignoreHandovers') {
+    for (const id of change.ids) await store.closeHandover(businessId, id);
+  } else if (change.type === 'replyHandover') {
+    // her answer goes into that customer's conversation; with "enseñar", also into settings.learnedAnswers
+    if (change.set) {
+      previous = Object.fromEntries(Object.keys(change.set).map(k => [k, settings[k] ?? null]));
+      await store.saveBusiness({ ...business, settings: withSettings(settings, change.set) });
+    }
+    await store.addMessage({ businessId, customerId: change.customerId, direction: 'out', text: change.text, intent: 'owner-reply' });
+    await store.closeHandover(businessId, change.handoverId);
   } else {
     throw new Error(`Unknown owner change: ${change.type}`);
   }
@@ -272,6 +285,15 @@ async function undoOwnerChange(store, businessId, changeId) {
     await store.updateAppointment(businessId, c.data.appointmentId, { status: 'booked' });
   } else if (c.type === 'moveAppointment') {
     await store.updateAppointment(businessId, c.data.appointmentId, c.previous);
+  } else if (c.type === 'ignoreHandovers') {
+    for (const id of c.data.ids) await store.reopenHandover(businessId, id);
+  } else if (c.type === 'replyHandover') {
+    // the message was already sent: it goes back to pending, and the learned answer is forgotten
+    await store.reopenHandover(businessId, c.data.handoverId);
+    if (c.previous) {
+      const business = await store.getBusiness(businessId);
+      await store.saveBusiness({ ...business, settings: withSettings(business.settings, c.previous) });
+    }
   }
   await store.markOwnerChangeUndone(businessId, c.id);
   return { type: 'undo', changeId, undid: c.type };

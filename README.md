@@ -34,6 +34,7 @@ Open http://localhost:3000 after `npm start`.
 - **Today is**: follows the real clock; change it to pretend the conversation happens on another day. **Now** goes back to the real clock.
 - **Add existing appointment**: gives this customer an appointment, to try moving, cancelling or checking it.
 - **New conversation**: forgets the conversation (her appointments are kept).
+- **Owner demo data**: fills the salon with named customers, appointments this week, questions in the owner's inbox and a waiting list, to try owner mode.
 - **Owner mode**: type `login:owner` (demo salons only) to act as the salon owner. The header shows a purple **Modo dueña** label, the examples change, and the panel adds the salon's live settings, its catalog (services turned off are struck through) and the owner's changes. `logout` goes back to the customer. See [owner mode](docs/architecture.md#owner-mode-modo-dueña).
 - **Right panel**: what the engine understood (click any bot reply to inspect that turn), the salon calendar, the owner's inbox, the waiting list, the conversation state and the raw result.
 
@@ -61,6 +62,7 @@ WhatsApp / test UI ──► server/index.js ──► src/bot.js ──► src/
 
 **Owner mode.** When the salon owner writes (a number in `settings.ownerPhones`, or `login:owner` in the demo salons), `src/owner/` answers instead of the customer bot.
 - She can see her agenda ("¿qué tengo hoy?"), close days ("el jueves cierro"), change hours ("mañana abro a las 10"), prices ("sube el tinte a 38") and services ("ya no hago permanente"), and book, cancel or move appointments ("apunta a Lucía mañana a las 10 para corte").
+- From the inbox ("¿qué me han preguntado?" and a number) she can ignore a message, reply to the customer, or reply and teach the bot, so the next customer who asks the same gets that answer.
 - Every change asks "(sí / no)" first and can be reverted with `deshacer`.
 - Appointments are never cancelled on their own: the bot warns about the ones affected.
 - Details are in [docs/architecture.md](docs/architecture.md#owner-mode-modo-dueña).
@@ -147,6 +149,7 @@ Each salon's settings live in `businesses.settings` (JSON). Anything left out ta
 | `closedWeekdays` | `[0]` | Used only when there is no `hours`: weekly days off (0 = Sunday … 6 = Saturday) |
 | `closedDates` | `[]` | Public holidays: `"2026-12-08"` or `{ "date": "2026-12-26", "reason": "Sant Esteve" }` |
 | `closedRanges` | `[]` | Holidays or other closures: `{ "from": "2026-08-10", "to": "2026-08-24", "reason": "vacaciones" }` |
+| `learnedAnswers` | `[]` | Answers the owner taught from owner mode: `[{ question, text, answer }]`. Used instead of handing over when a customer writes the same or nearly the same |
 | `dateOverrides` | `{}` | Different hours for one day: `{ "2026-11-11": [["10:00","20:00"]] }` (set from owner mode: "mañana abro a las 10") |
 | `ownerPhones` | `[]` | Numbers that get owner mode instead of the customer bot |
 | `devOwnerLogin` | `false` | **Testing only.** `login:owner` enters owner mode from any phone. On in the demo salons |
