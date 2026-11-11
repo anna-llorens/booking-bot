@@ -146,6 +146,10 @@ const OWNER_WELCOME = 'Hola 👋 Modo dueña activado. Puedes preguntarme por tu
 const DEV_LOGIN = 'login:owner'; // testing only: works only with settings.devOwnerLogin = true
 const SETTINGS_CHANGES = ['closeDate', 'closeRange', 'openDate', 'setDayHours', 'setWeeklyHours', 'forgetAnswer'];
 const CATALOG_CHANGES = { setPrice: 'price', setDuration: 'duration', disableService: 'active', enableService: 'active' };
+// one service, several fields: { serviceId, patch, previous }
+const SERVICE_PATCHES = ['renameService', 'setCategory', 'setDescription'];
+// several services at once: { items: [{ serviceId, patch, previous }] }
+const SERVICE_BATCHES = ['bulkPrice', 'disableServices'];
 
 class SlotTaken extends Error {}
 
@@ -185,6 +189,7 @@ async function handleOwner(store, { business, customer, state, text, now, today 
 
   const catalog = await store.listServices(business.id, { includeInactive: true });
   const appointments = await store.listAgenda(business.id, { from: today });
+  const daysAgo = n => { const d = new Date(now); d.setDate(d.getDate() - n); return toISODate(d); };
   const result = respondOwner(text, state.owner ?? {}, {
     today: now,
     business: { ...settings, name: business.name },
@@ -193,6 +198,10 @@ async function handleOwner(store, { business, customer, state, text, now, today 
     inbox: await store.listHandovers(business.id),
     waitlist: await store.listWaitlist(business.id),
     lastChange: await store.getLastOwnerChange(business.id),
+    recentChanges: await store.listOwnerChanges(business.id, { limit: 50 }),
+    customers: await store.listCustomers(business.id, today),
+    history: await store.listAgenda(business.id, { from: daysAgo(90), to: daysAgo(1) }),
+    cancelled: await store.listAgenda(business.id, { from: daysAgo(60), status: 'cancelled' }),
     isFree: makeIsFree(appointments, { ...settings, simulatedBusy: false }),
   });
   const intent = result.understanding.intent;
@@ -211,7 +220,7 @@ async function handleOwner(store, { business, customer, state, text, now, today 
     try {
       const done = await applyOwnerChange(store, business.id, change);
       applied.push(done);
-      if (done.type === 'replyHandover') outbound.push({ customerId: done.customerId, phone: done.phone, text: done.text });
+      if (done.type === 'replyHandover' || done.type === 'sendMessage') outbound.push({ customerId: done.customerId, phone: done.phone, text: done.text });
     } catch (err) {
       if (!(err instanceof SlotTaken)) throw err;
       reply = 'Vaya, esa hora se acaba de ocupar 😔 No he cambiado nada. Dime otra hora.';
@@ -253,6 +262,19 @@ async function applyOwnerChange(store, businessId, change) {
     }
   } else if (change.type === 'cancelAppointment') {
     await store.cancelAppointment(businessId, change.appointmentId);
+  } else if (SERVICE_PATCHES.includes(change.type)) {
+    await store.updateService(businessId, change.serviceId, change.patch);
+  } else if (SERVICE_BATCHES.includes(change.type)) {
+    for (const item of change.items) await store.updateService(businessId, item.serviceId, item.patch);
+  } else if (change.type === 'changeAppointmentService') {
+    await store.updateAppointment(businessId, change.appointmentId, change.patch);
+  } else if (change.type === 'cancelAppointments') {
+    for (const id of change.ids) await store.cancelAppointment(businessId, id);
+  } else if (change.type === 'renameBusiness') {
+    previous = { name: business.name };
+    await store.saveBusiness({ ...business, name: change.name });
+  } else if (change.type === 'sendMessage') {
+    await store.addMessage({ businessId, customerId: change.customerId, direction: 'out', text: change.text, intent: 'owner-message' });
   } else if (change.type === 'addService') {
     await store.addService(businessId, change.service);
   } else if (change.type === 'ignoreHandovers') {
@@ -287,6 +309,19 @@ async function undoOwnerChange(store, businessId, changeId) {
     await store.updateAppointment(businessId, c.data.appointmentId, { status: 'booked' });
   } else if (c.type === 'moveAppointment') {
     await store.updateAppointment(businessId, c.data.appointmentId, c.previous);
+  } else if (SERVICE_PATCHES.includes(c.type)) {
+    await store.updateService(businessId, c.data.serviceId, c.data.previous);
+  } else if (SERVICE_BATCHES.includes(c.type)) {
+    for (const item of c.data.items) await store.updateService(businessId, item.serviceId, item.previous);
+  } else if (c.type === 'changeAppointmentService') {
+    await store.updateAppointment(businessId, c.data.appointmentId, c.data.previous);
+  } else if (c.type === 'cancelAppointments') {
+    for (const id of c.data.ids) await store.updateAppointment(businessId, id, { status: 'booked' });
+  } else if (c.type === 'renameBusiness') {
+    const business = await store.getBusiness(businessId);
+    await store.saveBusiness({ ...business, name: c.previous.name });
+  } else if (c.type === 'sendMessage') {
+    // a message already sent can't be taken back: nothing to undo
   } else if (c.type === 'addService') {
     await store.deleteService(businessId, c.data.service.id);
   } else if (c.type === 'ignoreHandovers') {

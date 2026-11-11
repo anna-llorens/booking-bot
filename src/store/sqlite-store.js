@@ -185,13 +185,15 @@ class SqliteStore {
   async deleteService(businessId, id) {
     this.db.prepare('DELETE FROM services WHERE business_id = ? AND id = ?').run(businessId, id);
   }
-  // Changes one service: { price, duration, active }
+  // Changes one service: { price, duration, active, name, synonyms, category, description }
   async updateService(businessId, id, patch) {
     const cur = this.db.prepare('SELECT * FROM services WHERE business_id = ? AND id = ?').get(businessId, id);
     if (!cur) return null;
     const s = { ...rowToService(cur), ...patch };
-    this.db.prepare('UPDATE services SET price = ?, duration = ?, active = ? WHERE business_id = ? AND id = ?')
-      .run(s.price ?? null, s.duration ?? null, s.active === false ? 0 : 1, businessId, id);
+    this.db.prepare(`UPDATE services SET price = ?, duration = ?, active = ?, name = ?, synonyms = ?, category = ?, description = ?
+      WHERE business_id = ? AND id = ?`)
+      .run(s.price ?? null, s.duration ?? null, s.active === false ? 0 : 1, s.name, JSON.stringify(s.synonyms ?? []),
+        s.category ?? null, s.description ?? null, businessId, id);
     return rowToService(this.db.prepare('SELECT * FROM services WHERE business_id = ? AND id = ?').get(businessId, id));
   }
   // Replaces the whole catalog of a business.
@@ -211,6 +213,18 @@ class SqliteStore {
     this.db.prepare(`INSERT INTO customers (business_id, phone, created_at, last_seen_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(business_id, phone) DO UPDATE SET last_seen_at = excluded.last_seen_at`).run(businessId, phone, t, t);
     return rowToCustomer(this.db.prepare('SELECT * FROM customers WHERE business_id = ? AND phone = ?').get(businessId, phone));
+  }
+  // Every customer with her visits: how many, the last one (before `today`) and the next one (owner mode)
+  async listCustomers(businessId, today) {
+    return this.db.prepare(`SELECT c.*,
+        (SELECT COUNT(*) FROM appointments a WHERE a.customer_id = c.id AND a.status = 'booked') AS visits,
+        (SELECT a.date || ' ' || a.time || ' ' || a.name FROM appointments a WHERE a.customer_id = c.id AND a.status = 'booked' AND a.date < ? ORDER BY a.date DESC, a.time DESC LIMIT 1) AS last,
+        (SELECT a.date || ' ' || a.time || ' ' || a.name FROM appointments a WHERE a.customer_id = c.id AND a.status = 'booked' AND a.date >= ? ORDER BY a.date, a.time LIMIT 1) AS next
+      FROM customers c WHERE c.business_id = ? ORDER BY c.name`).all(today, today, businessId)
+      .map(r => {
+        const visit = v => v && { date: v.slice(0, 10), time: v.slice(11, 16), name: v.slice(17) };
+        return { id: r.id, name: r.name, phone: r.phone, visits: r.visits, last: visit(r.last), next: visit(r.next) };
+      });
   }
   // A customer the owner books by hand, with no phone ("apunta a Lucía…"): one per name
   async findOrCreateManualCustomer(businessId, name) {

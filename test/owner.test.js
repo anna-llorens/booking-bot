@@ -8,20 +8,30 @@ const { understandOwner } = require('../src/owner/understand-owner');
 const { instantAt } = require('../src/timezone');
 
 // ---- phrases ----
-const bank = require('./fixtures/owner-phrases.json');
+// owner-phrases.json (spec and real test-UI messages) and owner-synthetic.json (ChatGPT) must pass 100 %;
+// owner-holdout.json is only measured: never look at its failures to write rules.
 const catalog = require('../src/catalog.json').services;
-const [y, mo, d] = bank.today.slice(0, 10).split('-').map(Number);
-const today = new Date(y, mo - 1, d, 10, 0);
-let phraseFailures = 0;
-for (const p of bank.phrases) {
-  const u = understandOwner(p.text, { today, catalog });
-  const wrong = Object.entries(p.expected).filter(([k, v]) => JSON.stringify(u[k]) !== JSON.stringify(v));
-  if (wrong.length) {
-    phraseFailures++;
-    console.log(`✗ "${p.text}": ${wrong.map(([k, v]) => `${k} = ${JSON.stringify(u[k])}, expected ${JSON.stringify(v)}`).join('; ')}`);
+const wallDate = s => { const [d, t = '10:00'] = s.split('T'); const [y, mo, da] = d.split('-').map(Number); const [h, mi] = t.split(':').map(Number); return new Date(y, mo - 1, da, h, mi); };
+const checkPhrases = file => {
+  const f = require(`./fixtures/${file}`);
+  const today = wallDate(f.today);
+  const failures = [];
+  for (const p of f.phrases) {
+    const u = understandOwner(p.text, { today, catalog });
+    const wrong = Object.entries(p.expected).filter(([k, v]) => JSON.stringify(u[k] ?? null) !== JSON.stringify(v));
+    if (wrong.length) failures.push(`✗ "${p.text}": ${wrong.map(([k, v]) => `${k} = ${JSON.stringify(u[k] ?? null)}, expected ${JSON.stringify(v)}`).join('; ')}`);
   }
+  return { total: f.phrases.length, failures };
+};
+let phraseFailures = 0;
+for (const file of ['owner-phrases.json', 'owner-synthetic.json']) {
+  const r = checkPhrases(file);
+  r.failures.forEach(l => console.log(l));
+  phraseFailures += r.failures.length;
+  console.log(`Owner phrases (${file}): ${r.total - r.failures.length}/${r.total}`);
 }
-console.log(`Owner phrases: ${bank.phrases.length - phraseFailures}/${bank.phrases.length}`);
+const holdout = checkPhrases('owner-holdout.json');
+console.log(`Owner holdout (not tuned on, informative): ${holdout.total - holdout.failures.length}/${holdout.total}`);
 
 // ---- conversations ----
 const now = instantAt('2026-11-10T10:00', 'Europe/Madrid'); // Tuesday 10 Nov 2026
@@ -305,7 +315,7 @@ const cases = {
     assert.match((await say(store, OWNER, 'quiero añadir un servicio')).reply, /¿Cómo se llama/);
     assert.match((await say(store, OWNER, 'Lavado con masaje')).reply, /¿Cuánto dura/);
     assert.match((await say(store, OWNER, '45 min')).reply, /¿Qué precio/);
-    assert.match((await say(store, OWNER, '20')).reply, /¿Añado «Lavado con masaje» \(45 min · 20 €\)\?/);
+    assert.match((await say(store, OWNER, '20')).reply, /¿Añado «Lavado con masaje» \(45 min · 20 € · ➕ Otros\)\?/);
     await say(store, OWNER, 'sí');
     assert.ok((await store.listServices(SALON)).some(x => x.name === 'Lavado con masaje' && x.price === 20));
     const c = await say(store, CUSTOMER, 'quiero un lavado con masaje el viernes');
@@ -322,6 +332,100 @@ const cases = {
     const b = await say(store, OWNER, 'qwerty');
     assert.match(a.reply, /^No te he entendido/);
     assert.match(b.reply, /^Sigo sin entenderte/);
+  },
+
+  // ---- ChatGPT's fragmented examples (A–D): one order in several messages ----
+  'A: a new service in several messages, in any order, with a correction before "sí"': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    for (const m of ['Quiero añadir un servicio nuevo', 'Se llamará tratamiento de hidratación', 'Cuesta 30 euros', 'Y dura unos 45 minutos']) await say(store, OWNER, m);
+    assert.match((await say(store, OWNER, 'Ponlo en tratamientos capilares')).reply, /45 min · 30 € · ✨ Tratamientos capilares/);
+    assert.match((await say(store, OWNER, 'Ya puedes guardarlo')).reply, /Hecho/);
+    const added = (await store.listServices(SALON)).find(x => x.name === 'Tratamiento de hidratación');
+    assert.deepEqual([added.duration, added.price, added.category], [45, 30, 'tratamientos_capilares']);
+  },
+
+  'B: hours in several messages; "a partir de esta semana" turns one Saturday into every Saturday': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, 'Vamos a cambiar el horario del sábado')).reply, /¿Qué horario pongo el sábado 14/);
+    assert.match((await say(store, OWNER, 'Abriremos por la mañana')).reply, /ya abres de 9:00 a 14:00\. ¿Qué horario pongo\?/);
+    assert.match((await say(store, OWNER, 'De 9 a 13')).reply, /¿El sábado 14 de noviembre abro de 9:00 a 13:00\?/);
+    assert.match((await say(store, OWNER, 'Por la tarde cerrado')).reply, /Sí, eso es/);
+    assert.match((await say(store, OWNER, 'A partir de esta semana')).reply, /¿A partir de ahora los sábados abres de 9:00 a 13:00\?/);
+    await say(store, OWNER, 'sí');
+    assert.deepEqual((await settingsOf(store)).hours.sat, [['09:00', '13:00']]);
+  },
+
+  'C: a price with second thoughts: ask, "no espera", "mejor 15", "sí, déjalo así" → unchanged': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, 'Quiero subir el precio del corte')).reply, /¿A cuánto lo pongo\? Ahora Corte está a 15 €/);
+    assert.match((await say(store, OWNER, 'Ponlo a 16 euros')).reply, /¿Pongo Corte a 16 €\?/);
+    assert.match((await say(store, OWNER, 'No espera')).reply, /no cambio nada/);
+    assert.match((await say(store, OWNER, 'Mejor 15 euros')).reply, /ya está a 15 €/);
+    assert.match((await say(store, OWNER, 'Sí, déjalo así')).reply, /lo dejo como está/);
+    assert.equal(await priceOf(store, 'corte'), 15);
+  },
+
+  'D: agenda follow-ups narrow the last list: "solo las de la tarde", "de mechas", "¿cuántas son?"': async () => {
+    const store = await freshStore();
+    const { seedOwnerDemo } = require('../src/demo-data');
+    const { makeIsFree } = require('../src/bot');
+    const { closedReason } = require('../src/reply');
+    await seedOwnerDemo(store, SALON, new Date(2026, 10, 10, 9), { makeIsFree, closedReason });
+    await say(store, OWNER, 'login:owner');
+    const all = await say(store, OWNER, 'Enséñame las citas de mañana');
+    assert.match(all.reply, /Mañana \(miércoles 11 de noviembre\) tienes \d citas/);
+    const pm = await say(store, OWNER, 'Solo las de la tarde');
+    assert.match(pm.reply, /por la tarde:\n/);
+    assert.doesNotMatch(pm.reply, /\b(09|10|11|12):\d\d /);
+    assert.match((await say(store, OWNER, 'Cuántas son en total?')).reply, /por la tarde: \d citas? en total/);
+  },
+
+  'a message to one customer lands in her chat; campaigns and reminders change nothing': async () => {
+    const store = await freshStore();
+    const { seedOwnerDemo } = require('../src/demo-data');
+    const { makeIsFree } = require('../src/bot');
+    const { closedReason } = require('../src/reply');
+    await seedOwnerDemo(store, SALON, new Date(2026, 10, 10, 9), { makeIsFree, closedReason });
+    await say(store, OWNER, 'login:owner');
+    const ask = await say(store, OWNER, 'Dile a Ana que ya tenemos huecos para la semana que viene');
+    assert.match(ask.reply, /«Hola Ana 😊 Ya tenemos huecos para la semana que viene\.»/);
+    const sent = await say(store, OWNER, 'sí');
+    assert.deepEqual(sent.outbound.map(o => o.phone), ['34600100001']);
+    const ana = await store.findOrCreateCustomer(SALON, '34600100001');
+    assert.equal((await store.listMessages(SALON, ana.id)).at(-1).text, 'Hola Ana 😊 Ya tenemos huecos para la semana que viene.');
+    const before = (await store.listOwnerChanges(SALON)).length;
+    for (const m of ['Quiero lanzar una campaña para promocionar las mechas', 'Recuérdame mañana que tengo que hacer el pedido de champú', 'Quiero avisar a mis clientas de que el viernes no abrimos']) {
+      const r = await say(store, OWNER, m);
+      assert.match(r.reply, /todavía no/, m);
+    }
+    assert.equal((await store.listOwnerChanges(SALON)).length, before, 'nothing changed');
+    assert.ok(!(await settingsOf(store)).closedDates.includes('2026-11-13'), '"el viernes no abrimos" in a broadcast is not a closure');
+  },
+
+  'prices for many at once (+5 %), rounded to 50 cents, and undone in one go': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, 'Quiero subir todos los servicios un 5 por ciento')).reply, /Corte 15 € → 16 €/);
+    await say(store, OWNER, 'sí');
+    assert.equal(await priceOf(store, 'corte'), 16);
+    assert.equal(await priceOf(store, 'corte_hombre'), 14.5);
+    await say(store, OWNER, 'deshacer');
+    assert.equal(await priceOf(store, 'corte'), 15);
+    assert.equal(await priceOf(store, 'corte_hombre'), 14);
+  },
+
+  'a block ("bloquea mañana de 12 a 14") takes those hours away from customers': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, 'Bloquea mañana de 12 a 14 porque tengo que salir')).reply, /quedaría abierto de 9:30 a 12:00 y de 16:30 a 20:00/);
+    await say(store, OWNER, 'sí');
+    assert.deepEqual((await settingsOf(store)).dateOverrides['2026-11-11'], [['09:30', '12:00'], ['16:30', '20:00']]);
+    const c = await say(store, CUSTOMER, 'quiero corte mañana a las 12:30');
+    assert.doesNotMatch(c.reply, /12:30\?|a las 12:30\. /);
+    assert.match((await say(store, OWNER, 'Desbloquea el horario de mañana')).reply, /¿Vuelvo a poner el horario de siempre/);
   },
 
   'anything else: "No te he entendido", and nothing changes': async () => {

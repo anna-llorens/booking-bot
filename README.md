@@ -247,7 +247,7 @@ Labelling tips: not every "vale" is `confirm` (it can be `undecided`, or the ans
 | `test/reply.test.js` | Short scripted conversations through `respond()` |
 | `test/conversations.test.js` + `test/fixtures/conversations.json` | 43 whole conversations, optionally with salon settings: per-turn checks and the final state (appointment, booking in progress, waiting list). `--verbose` prints every turn |
 | `test/store.test.js` | Database and `bot.js` end to end on an in-memory SQLite: salons kept apart, no double booking, moves update, cancel asks first, "lo de siempre" from history, phone formats, holidays, notes, GDPR delete |
-| `test/owner.test.js` + `test/fixtures/owner-phrases.json` | Owner mode: 88 phrases, and whole conversations through `bot.js` (login, confirm, undo, warnings, what customers see after a change) |
+| `test/owner.test.js` + `test/fixtures/owner-phrases.json`, `owner-synthetic.json`, `owner-holdout.json` | Owner mode: phrases from the spec and the test UI, ChatGPT-generated phrases relabeled with the bot's intents (both must pass 100 %), a holdout that is only measured, and whole conversations through `bot.js` (login, confirm, undo, warnings, orders in several messages, what customers see after a change) |
 
 `npm test` runs all five.
 

@@ -181,6 +181,19 @@ The salon owner manages the salon from the same WhatsApp chat: agenda, closures,
 | `servicesList` | "servicios", "servicios de color" | The catalog by group, or one group with durations and prices |
 | `addService` | "añade un servicio", "añade el servicio lavado con masaje, 45 min, 20 €" | Asks for what is missing (name, duration, price or «sin precio»), then adds it in the group «Otros» with its name as synonym. Undo deletes it |
 | `feedback` | "te queda mucho por entrenar" | Admits it and points to *ayuda* |
+| `renameService`, `setCategory`, `setDescription` | "cambia corte de pelo por corte de señora", "pon el alisado en tratamientos", "cambia la descripción de la manicura" | The service's name (the old one stays as a synonym), group or description |
+| `bulkPrice`, `restorePrice` | "sube todos los servicios un 5 %", "todos los tratamientos 4 euros más", "vuelve a poner el corte al precio de antes" | Many prices at once (rounded to 50 cents, undone in one go); a price back to what it was |
+| `setPrice` (relative) | "sube el corte 2 euros", "quiero subir el precio del corte" → "¿A cuánto lo pongo?" | |
+| `blockTime`, `restoreHours` | "bloquea mañana de 12 a 14", "no permitas reservas el viernes por la tarde", "desbloquea el sábado" | That day's hours without that time (`dateOverrides`), or back to the usual hours |
+| `hours` (one day / weekday) | "¿abrimos los sábados?", "¿a qué hora cerramos hoy?" | |
+| `agenda` filters | "¿quién viene a las cinco?", "¿qué huecos quedan mañana por la tarde?", "citas de mechas esta semana", then "solo las de la tarde", "¿cuántas son?" | Follow-ups narrow the last list |
+| `cancellations`, `customerInfo`, `stats`, `changesHistory` | "¿hay alguna cancelación hoy?", "busca a Laura", "¿cuántas citas hemos tenido este mes?", "¿qué hemos cambiado esta semana?" | Read only |
+| `sendMessage` | "dile a Ana que ya tenemos huecos", "manda un mensaje a Lucía para recordarle su cita" | One customer by name: her text (or a reminder of her next appointment), confirmed, then sent like an inbox reply |
+| `changeAppointmentService`, `cancelAppointment` (all) | "la cita de Ana es para tinte, no para corte", "cancela todas las citas del jueves" | |
+| `renameBusiness` | "quiero cambiar el nombre del salón" | |
+| `notSupported` | campaigns, broadcasts to many, offers, reminders, automatic notices, writing texts, posters, lists, backups, the weather, jokes | Said plainly with what it can do instead. Checked before anything else, so "recuérdame mañana…" is not the agenda and "avisa a mis clientas de que el viernes no abrimos" is not a closure. Nothing is changed |
+
+Orders can come in several messages: a question the bot asks waits for the answer (`pending.kind = 'draft'`), and a correction before "sí" ("mejor 15 euros", "ponlo en tratamientos capilares", "a partir de esta semana") rebuilds the question (`pending.redo`).
 | `help`, `yes`, `no`, `undo`, `logout` | "ayuda", "sí", "no", "deshacer", "salir" | — |
 
 A message not understood twice in a row gets a different reply the second time ("Sigo sin entenderte…"), like the customer bot.

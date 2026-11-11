@@ -12,7 +12,7 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 | `getBusiness(id)` | business or `null` |
 | `saveBusiness({ id, name, settings })` | the business (insert or update) |
 | `listServices(businessId, { includeInactive = false })` | active services (or all, for owner mode): `[{ id, group, category, name, duration, price, synonyms, active, description }]` |
-| `updateService(businessId, id, { price?, duration?, active? })` | the service, or `null` |
+| `updateService(businessId, id, { price?, duration?, active?, name?, synonyms?, category?, description? })` | the service, or `null` |
 | `addService(businessId, service)` / `deleteService(businessId, id)` | — owner mode: a new service at the end of the catalog (and undoing it) |
 | `saveServices(businessId, services)` | replaces the salon's whole catalog |
 
@@ -21,6 +21,7 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 | Method | Returns |
 |---|---|
 | `findOrCreateCustomer(businessId, phone)` | `{ id, businessId, phone, name, createdAt, lastSeenAt }` — `phone` already normalized (`bot.normalizePhone`) |
+| `listCustomers(businessId, today)` | every customer with `visits`, `last` and `next` appointment (owner mode) |
 | `findOrCreateManualCustomer(businessId, name)` | a customer with no phone, booked by the owner (phone `manual:<name>`, one per name) |
 | `updateCustomer(businessId, customerId, { name })` | — |
 | `deleteCustomer(businessId, customerId)` | — removes her and everything about her (GDPR erasure) |
