@@ -35,7 +35,7 @@ const UNDO = /^(deshacer|deshaz|deshazlo|deshaz (eso|el ultimo cambio|lo ultimo)
 const HELP = /^(ayuda|help|menu|ejemplos|que (puedo|se puede) (hacer|decir|pedir|preguntar|cambiar)( aqui)?|como funciona( esto)?)$/;
 
 // ---- the inbox: "ver más", "ignora 1, 3 y 5", "ignora todos", and the options for one message ----
-const MORE = /^(ver |dame |ensename |y )?(mas|mas mensajes|siguientes|los siguientes|otros|el resto|resto|sigue)$|^(ver|leer|ensename|dame|lee|muestrame) (todos|todo|todas)( los mensajes)?$/;
+const MORE = /^(ver |dame |ensename |y )?(mas|mas mensajes|siguientes|los siguientes|otros|el resto|resto|sigue|seguir leyendo|sigue leyendo|continua|continuar)$|^(ver|leer|ensename|dame|lee|muestrame) (todos|todo|todas)( los mensajes)?$/;
 const IGNORE = /^(ignora|ignorar|ignoralo|ignorala|ignoralos|ignoralas|borra|borrar|borralo|borralos|quita|quitar|quitalo|quitalos|elimina|eliminar|eliminalo|eliminalos|descarta|descartar|descartalo|archiva|archivar|archivalo)( (el|la|los|las|este|ese|esta|esa|estos|esos|mensajes?|numeros?|todos|todas|todo|de|del|y|e|\d+))*$/;
 const IGNORE_SOME = /\b(borrar|ignorar|quitar|eliminar|descartar) (algunos|algunas|varios|varias|unos|unas)\b/;
 const REPLY_CHOICE = /^(responder|responde|respondele|responderle|contestar|contesta|contestale|contestarle|escribirle|escribele)( (a la clienta|a ella|solo))?$/;
@@ -44,16 +44,23 @@ const LEARNED = /\b(respuestas (aprendidas|guardadas|ensenadas)|que (respuestas 
 const FORGET = /^(olvida|olvidate de|borra|quita|elimina) (la )?(respuesta )?(aprendida |numero )?(\d{1,2})$/;
 
 // ---- queries ----
-const INBOX = /\b(me ha escrito una clienta|no se que (contestar|contestarle|responder|responderle)|que le contesto|que me han (preguntado|escrito|dicho|pedido)|bandeja|mensajes (pendientes|sin (contestar|responder|leer))|preguntas (pendientes|sin contestar)|que (hay|tengo) (pendiente|sin contestar)|quien me ha escrito|pendientes de contestar)\b/;
+const INBOX = /^(los |mis |ver |ver los |listar |lista de |leer )?mensajes$|\b(me ha escrito una clienta|no se que (contestar|contestarle|responder|responderle)|que le contesto|que me han (preguntado|escrito|dicho|pedido)|bandeja|mensajes (pendientes|sin (contestar|responder|leer))|preguntas (pendientes|sin contestar)|que (hay|tengo) (pendiente|sin contestar)|quien me ha escrito|pendientes de contestar)\b/;
 const WAITLIST = /\b(lista de espera|quien (esta|hay) esperando|en espera)\b/;
-const HOURS_QUERY = /\b(que horario tengo|cual es mi horario|mi horario|horario (actual|de ahora)|que dias (cierro|cerramos|tengo cerrado|abro|abrimos)|que cierres tengo|cuando (cierro|cerramos) por vacaciones)\b/;
+const HOURS_QUERY = /^(el |mi |los )?horarios?$|\b(que horario tengo|cual es mi horario|mi horario|horario (actual|de ahora)|que dias (cierro|cerramos|tengo cerrado|abro|abrimos)|que cierres tengo|cuando (cierro|cerramos) por vacaciones)\b/;
 const AGENDA = /\b(que citas tenemos|quien viene|agenda de)\b|^(y )?(del|este|el|todo el|de este) mes( que viene)?$|^(y )?(esta|la) semana( que viene)?$|^(el )?calendario$|^(la )?agenda$|\b(que tengo|tengo (citas|algo|gente|alguien|clientas?)|cuantas citas|cuantas clientas|citas (de|del|para|hoy|manana|esta|la|el)|agenda|quien viene|a quien tengo|que hay (hoy|manana|el|esta|la)|como (tengo|voy|va|esta) (el dia|la semana|la agenda|hoy|manana|el)|mis citas|las citas|que citas)\b|^(y )?(citas|hoy|manana)$/;
+// "me he equivocado", "lo he ignorado sin querer", "me habías dicho que había 44": offer to undo the last change
+const OOPS = /\b(sin querer|me he equivocado|me equivoque|me he colado|no queria|no era eso|me habias dicho|la he liado|recuperalos|recuperalo)\b/;
+// all upcoming appointments ("todas las citas", "citas totales")
+const ALL_UPCOMING = /\b(todas las citas|todas mis citas|citas totales|todas las proximas|proximas citas)\b|^todas las\b/;
+// a service group named on its own ("manos y pies", "tratamientos capilares")
+const GROUP_ONLY = /^(los |las )?(servicios de |tratamientos de )?(peluqueria|color|coloracion|tratamientos capilares|tratamientos|barberia|facial|faciales|estetica facial|corporal|estetica corporal|depilacion|depilaciones|manos y pies|unas|manicura y pedicura|cejas y pestanas|pestanas y cejas|cejas|pestanas|estetica)$/;
+const CUSTOMERS_LIST = /^(mis |las |lista de |ver |listar )?(clientas|clientes)$|\b(que clientas tengo|lista de clientas)\b/;
 const STATS = /\b(cuantas clientas|cuantos clientes|numero de clientas|clientas (registradas|en total)|cuantas citas hemos tenido|mas se reservan|mas reservad\w*|mas pedid\w*|estadisticas|resumen de la actividad|actividad del negocio|como va el negocio)\b/;
 const CHANGES_HISTORY = /\b(lo que hemos cambiado|que (he|hemos) cambiado|cambios (de esta|que he|que hemos|recientes)|historial de cambios|ultimos cambios)\b/;
 const RENAME_BUSINESS = /\bnombre (del|de la|de mi) (salon|peluqueria|negocio|centro|local)\b/;
 const CUSTOMER_INFO = /\b(busca|buscame|telefono de|numero de telefono|movil de|cuando vino|ultima vez|ficha de|datos de|informacion de)\b/;
 const CANCELLATIONS = /\b(cancelacion|cancelaciones|ha cancelado|han cancelado|ha anulado|han anulado|anulaciones)\b/;
-const FREE = /\b(huecos?|hueco libre|huecos libres|tengo libre|queda libre|quedan libres)\b/;
+const FREE = /\b(huecos?|hueco libre|huecos libres|tengo libre|queda libre|quedan libres|cuando no tengo (citas|nada)|cuando estoy libre)\b/;
 // the catalog as a list ("¿qué servicios de uñas tenemos?", "¿cuál es el más caro?")
 const LIST_NOUN = /\b(servicios?|catalogo|tratamientos|precios|tarifas|carta|tipos de corte)\b|\bpor todo\b/;
 const LIST_ASK = /\b(que|cuales?|lista|listame|ensename|muestrame|dime|ver|resumen|revisar|hay|ofrecemos|ofrezco|tenemos|tengo|hacemos|todos|todas|completo|cuanto)\b/;
@@ -119,7 +126,7 @@ const ADD_SERVICE = /\b(anadir|anade|anademe|nuevo|nueva|crear|crea|creame|agreg
 const EXISTS = /\b(esta|estan|existe|existen|tenemos|tengo|tienes|hay|ofrecemos|ofrezco|hacemos|hago)\b/;
 
 // ---- changes ----
-const CANCEL_V = /\b(cancela|cancelame|cancelale|anula|anulale|borra|borrale|elimina|quita|quitale)\b/;
+const CANCEL_V = /\b(cancela|cancelar|cancelame|cancelale|anula|anular|anulale|borra|borrar|borrale|elimina|eliminar|quita|quitale)\b/;
 const MOVE_V = /\b(mueve|muevela|muevele|mover|cambia|cambiala|cambiale|cambiar|pasa|pasala|pasale|pasar|retrasa|retrasala|adelanta|adelantala)\b/;
 const APPT_REF = /\b(cita|citas|la de|la del|la que|el de las|la de las|la hora de)\b/;
 const BOOK_V = /^(quiero |puedes |me )?(apunta|apuntame|apuntale|apuntar|anota|anotame|anotale|anotar|reserva|reservale|reservar|mete|metele|agendale|ponle (una )?cita|pon (una )?cita|pon a|ponme a|cita para|nueva cita|anade a|anademe a|anade una cita|anadir a|anadir una cita)\b/;
@@ -362,18 +369,35 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   if (YES.test(t)) return r({ intent: 'yes' });
   if (NO.test(t)) return r({ intent: 'no' });
   if (WAIT.test(t)) return r({ intent: 'wait' });
+  // a pasted list (bullets, several times): never an order
+  if (/[•·]/.test(message) || (message.match(/\b\d{1,2}:\d{2}\b/g)?.length ?? 0) >= 3) return r({ intent: 'pasted' });
+  if (OOPS.test(t)) return r({ intent: 'oops' });
+  if (/^(resume|resumeme|resumen|hazme un resumen)$/.test(t)) return r({ intent: 'dayStatus' });
+  if (/^(cancelar|cancelar citas?|cancelar una cita|anular citas?|borrar citas?)$/.test(t)) return r({ intent: 'cancelAppointment', name: null, date: null, time: null, all: false });
 
   // 2. the inbox
   if (MORE.test(t)) return r({ intent: 'inboxMore', all: /\b(todos|todo|todas)\b/.test(t) });
   if (FORGET.test(t) && /\b(olvida|respuesta)/.test(t)) return r({ intent: 'forgetAnswer', number: +t.match(FORGET)[5] });
   if (IGNORE.test(t)) {
-    return r({ intent: 'ignore', numbers: [...t.matchAll(/\d+/g)].map(m => +m[0]), all: /\b(todos|todas|todo)\b/.test(t) });
+    return r({ intent: 'ignore', numbers: [...t.matchAll(/\d+/g)].map(m => +m[0]), all: /\b(todos|todas|todo)\b/.test(t), shown: /\b(estos|esos|estas|esas)\b/.test(t) });
   }
   if (IGNORE_SOME.test(t)) return r({ intent: 'ignore', numbers: [], all: false, ask: true });
   if (REPLY_CHOICE.test(t)) return r({ intent: 'replyChoice' });
   if (TEACH_CHOICE.test(t)) return r({ intent: 'teachChoice' });
   if (LEARNED.test(t)) return r({ intent: 'learnedAnswers' });
   if (INBOX.test(t)) return r({ intent: 'inbox' });
+
+  if (CUSTOMERS_LIST.test(t)) return r({ intent: 'customersList' });
+  if (GROUP_ONLY.test(t)) return r({ intent: 'servicesList', category: categoryOf(message, t, today, catalog) });
+  if (/^(listamelos|listalos|ensenamelos|dimelos|muestramelos|ponlos)( todos)?$|^(todos los servicios|lista completa|el catalogo entero)$/.test(t)) return r({ intent: 'servicesList', all: true });
+  // "el 600 000 000 es María", "ponle nombre María al 600000000"
+  const NAME = '([A-ZÁÉÍÓÚÑa-záéíóúñ]+(?:\\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)';
+  let named = message.match(new RegExp(`(\\+?\\d[\\d ]{7,}\\d)\\s*(?:es|se llama)\\s+${NAME}`));
+  if (!named) {
+    const m2 = message.match(new RegExp(`ponle (?:de )?nombre\\s+${NAME}\\s+al?\\s+(\\+?\\d[\\d ]{7,}\\d)`, 'i'));
+    if (m2) named = [m2[0], m2[2], m2[1]];
+  }
+  if (named) return r({ intent: 'nameCustomer', phone: named[1].replace(/\D/g, ''), name: capital(named[2].toLowerCase()) });
 
   // 3. what owner mode can't do yet
   const topic = notSupportedTopic(t, message);
@@ -448,7 +472,7 @@ function understandOwner(message, { today, catalog = [] } = {}) {
     return r({ intent: 'changeAppointmentService', name, serviceId: detectServices(what, catalog).filter(x => x.id !== 'LAST')[0]?.id ?? null });
   }
   if (CANCEL_V.test(t) && APPT_REF.test(t)) {
-    return r({ intent: 'cancelAppointment', name, date: date && iso(date), time: detectTime(t), all: /\btodas (las citas|las de)\b/.test(t) });
+    return r({ intent: 'cancelAppointment', name, date: date && iso(date), time: detectTime(t), all: /\btodas\b|\blas citas (de|del)\b/.test(t) });
   }
   if (MOVE_V.test(t) && (APPT_REF.test(t) || /\b(a|la cita de) [a-z]+ (del?|a|al|para)\b/.test(t)) && !(service && price != null)) {
     const { old, next } = splitMove(t);
@@ -494,7 +518,11 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   // 9. free time, blocks, closures and opening hours
   const timeOfDay = /\btoda la manana\b/.test(t) ? 'morning' : /\btoda la tarde\b/.test(t) ? 'afternoon' : detectTimeOfDay(t);
   const hours = parseHours(t);
-  if (FREE.test(t) && (asked || /\b(hay|quedan|queda)\b/.test(t))) return r({ intent: 'agenda', ...agendaRange(t, today), timeOfDay, free: true });
+  if (FREE.test(t) && !BLOCK.test(t)) {
+    // "huecos libres", "dame los próximos huecos": the next days if no day was said
+    const when = date || /\b(semana|mes)\b/.test(t) ? agendaRange(t, today) : { from: iso(today), to: iso(addDays(today, 6)), range: 'next' };
+    return r({ intent: 'agenda', ...when, timeOfDay, free: true });
+  }
   if (BLOCK.test(t)) {
     return r({ intent: 'blockTime', date: iso(date ?? today), from: hours?.intervals?.[0]?.[0] ?? null, to: hours?.intervals?.[0]?.[1] ?? null, timeOfDay: hours ? null : timeOfDay });
   }
@@ -529,6 +557,7 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   if (date && closing) return r({ intent: 'closeDate', date: iso(date), reason: /\bfestivo|fiesta\b/.test(t) ? 'festivo' : null });
 
   // 10. the agenda, with filters
+  if (ALL_UPCOMING.test(t)) return r({ intent: 'agenda', from: iso(today), to: iso(addDays(today, 60)), range: 'upcoming' });
   if (AGENDA.test(t) || /\b(que tenemos|primeras citas|tengo (alguna|algun|una) cita|organizame la agenda|que tengo que hacer)\b/.test(t)) {
     const fromTime = /\ba partir de las\b/.test(t) ? detectTime(t.replace(/\ba partir de las\b/, 'a las')) : null;
     return r({ intent: 'agenda', ...agendaRange(t, today), timeOfDay, fromTime, time: fromTime ? null : detectTime(t), serviceId: service });
@@ -545,6 +574,9 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   return r({
     intent: null, number: number ? +number[1] : null, date: date && iso(date), time: detectTime(t), serviceId: service, price, duration,
     name: parseName(message, catalog, { afterVerb: false }), timeOfDay, category,
+    closed: /^(cerrado|cerrada|cierro|cerramos|cerrado todo el dia)$/.test(t),
+    // a price only if she says it is one: "mejor 15 euros", "ponlo a 15" (never a bare "3")
+    price: /€|\beuros?\b|\b(ponlo|ponla|mejor|precio|a) \d/.test(basicNormalize(message)) ? price : null,
   });
 }
 

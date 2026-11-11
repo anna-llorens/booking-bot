@@ -191,7 +191,17 @@ The salon owner manages the salon from the same WhatsApp chat: agenda, closures,
 | `sendMessage` | "dile a Ana que ya tenemos huecos", "manda un mensaje a Lucía para recordarle su cita" | One customer by name: her text (or a reminder of her next appointment), confirmed, then sent like an inbox reply |
 | `changeAppointmentService`, `cancelAppointment` (all) | "la cita de Ana es para tinte, no para corte", "cancela todas las citas del jueves" | |
 | `renameBusiness` | "quiero cambiar el nombre del salón" | |
+| `nameCustomer`, `customersList` | "el 600 000 000 es María", "clientas" | A name for a customer known only by her number; the customers with appointments |
 | `notSupported` | campaigns, broadcasts to many, offers, reminders, automatic notices, writing texts, posters, lists, backups, the weather, jokes | Said plainly with what it can do instead. Checked before anything else, so "recuérdame mañana…" is not the agenda and "avisa a mis clientas de que el viernes no abrimos" is not a closure. Nothing is changed |
+
+Small safety rules learned from real sessions:
+- A **bare number** is never a price ("3" after a misunderstanding); a price needs "€", "euros" or "ponlo a…".
+- A **pasted list** (bullets or several times) is never an order.
+- **Inside a menu** (one inbox message, a list of appointments), a message it doesn't understand keeps the menu and says what it expects.
+- **"Ignora todos"** says how many she hasn't seen yet; "ignora estos" is only the page she saw.
+- **"Sin querer"**, "me he equivocado", "me habías dicho…" offers to undo the last change.
+- After cancelling one appointment from a list, the list comes back ("¿Cancelo otra?"); "todas" cancels the whole list.
+- A greeting is short; the day's summary comes with «resumen».
 
 Orders can come in several messages: a question the bot asks waits for the answer (`pending.kind = 'draft'`), and a correction before "sí" ("mejor 15 euros", "ponlo en tratamientos capilares", "a partir de esta semana") rebuilds the question (`pending.redo`).
 | `help`, `yes`, `no`, `undo`, `logout` | "ayuda", "sí", "no", "deshacer", "salir" | — |

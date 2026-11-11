@@ -9,11 +9,14 @@
 //   POST /api/message      { businessId, phone, message, today? }   one customer message -> bot reply
 //   POST /api/reset        { businessId, phone }      new conversation (appointments are kept)
 //   POST /api/appointments { businessId, phone, today? }            gives her an appointment, for testing
-// Messages it can't handle are logged to private-data/not-understood.json (customers) and
-// private-data/not-understood-owner.json (owner mode), both git-ignored.
 //   POST /api/demo/owner   { businessId, today? }     owner-mode demo data: named customers, appointments, inbox
 //   GET  /api/overview?businessId=&phone=              calendar, owner inbox, her messages, settings, catalog,
 //                                                      owner-mode changes and whether this phone is in owner mode
+//
+// Saved in private-data/ (git-ignored):
+//   sessions/<day>.jsonl       every message and reply, to review whole sessions (npm run sessions)
+//   not-understood.json        customer messages it couldn't handle
+//   not-understood-owner.json  owner-mode messages answered with "No te he entendido"
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -28,6 +31,9 @@ const PORT = Number(process.env.PORT) || 3000;
 const PAGE = path.join(__dirname, 'public', 'index.html');
 // Messages the bot did not understand. Git-ignored: what you type may contain real customer data.
 const NOT_UNDERSTOOD_FILE = process.env.NOT_UNDERSTOOD_FILE || path.join(__dirname, '..', 'private-data', 'not-understood.json');
+// Every message and reply of the test UI, one JSON line each, one file per day, to review whole sessions
+// later (npm run sessions). Git-ignored: they contain whatever was typed.
+const SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(__dirname, '..', 'private-data', 'sessions');
 // The same for owner mode ("No te he entendido"), in the format of test/fixtures/owner-phrases.json
 const NOT_UNDERSTOOD_OWNER_FILE = process.env.NOT_UNDERSTOOD_OWNER_FILE || path.join(__dirname, '..', 'private-data', 'not-understood-owner.json');
 
@@ -97,6 +103,28 @@ function appendEntry(file, entry) {
   fs.writeFileSync(file, `[\n${entries.map(e => '  ' + JSON.stringify(e)).join(',\n')}\n]\n`);
   return entries.length;
 }
+
+// One turn of a session: what was written, what the bot answered and what it understood
+function logTurn(entry) {
+  try {
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+    const day = new Date().toISOString().slice(0, 10);
+    fs.appendFileSync(path.join(SESSIONS_DIR, `${day}.jsonl`), JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n');
+  } catch (err) {
+    console.warn(`⚠ Session not saved: ${err.message}`);
+  }
+}
+const sessionTurn = (businessId, phone, message, now, result) => ({
+  businessId, phone: normalizePhone(phone), today: localISO(now), mode: result.owner ? 'owner' : 'customer',
+  message, reply: result.silent ? null : result.reply, intent: result.understanding?.intent ?? null,
+  ...(result.silent ? { silent: result.silentReason ?? true } : {}),
+  ...(result.handover ? { handover: true } : {}),
+  ...(result.fallback ? { notUnderstood: true } : {}),
+  ...(result.changes?.length ? { changes: result.changes.map(c => c.summary ?? c.type) } : {}),
+  ...(result.outbound?.length ? { sent: result.outbound.map(o => ({ to: o.phone, text: o.text })) } : {}),
+  ...(result.state?.lastQuestion ? { lastQuestion: result.state.lastQuestion } : {}),
+  ...(result.state?.owner?.pending ? { waitingFor: result.state.owner.pending.kind } : {}),
+});
 
 // Explains in the terminal why the bot handed a message over to the owner.
 function logHandover(message, state, result, savedCount, businessId) {
@@ -205,6 +233,7 @@ const routes = {
     const customer = await store.findOrCreateCustomer(businessId, requirePhone(phone));
     const before = (await store.getConversation(businessId, customer.id))?.state ?? null;
     const result = await handleMessage(store, { businessId, phone, text: message, now });
+    logTurn(sessionTurn(businessId, phone, message, now, result));
     // Saved: messages it could not handle. Not saved: made-up text ("dkfjgh") and laughs/reactions it answered.
     if (result.owner) {
       if (result.fallback) {
@@ -224,6 +253,7 @@ const routes = {
   'POST /api/reset': async (req, res, { businessId, phone }) => {
     await requireBusiness(businessId);
     await resetConversation(store, { businessId, phone: requirePhone(phone) });
+    logTurn({ businessId, phone: requirePhone(phone), event: 'new conversation' });
     return { ok: true };
   },
 

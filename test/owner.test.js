@@ -288,12 +288,14 @@ const cases = {
     assert.match((await say(store, OWNER, 'citas del mes')).reply, /Este mes tienes 9 citas/);
   },
 
-  'small talk like the customer bot: "hola" and "¿qué tal ha ido el día?" give the day\'s summary': async () => {
+  'small talk like the customer bot; "resumen" and "¿qué tal ha ido el día?" give the day\'s summary': async () => {
     const store = await freshStore();
     await say(store, CUSTOMER, 'quiero cita para corte hoy a las 12');
     await say(store, CUSTOMER, 'sí');
     await say(store, OWNER, 'login:owner');
-    assert.match((await say(store, OWNER, 'hola')).reply, /^¡Buenos días! 😊 Hoy tienes 1 cita; la primera, a las 12:00 con \+34 600 111 222 \(Corte\)\. ¿En qué te ayudo\?$/);
+    // a greeting is short; the summary comes when she asks for it
+    assert.match((await say(store, OWNER, 'hola')).reply, /^¡Buenos días! 😊 ¿En qué te ayudo\? \(si quieres el resumen del día, dime «resumen»\)$/);
+    assert.match((await say(store, OWNER, 'resumen')).reply, /Hoy tienes 1 cita; la primera, a las 12:00 con \+34 600 111 222 \(Corte\)/);
     assert.match((await say(store, OWNER, '¿qué tal ha ido el día?')).reply, /Hoy tienes 1 cita/);
     assert.match((await say(store, OWNER, 'hola, ¿qué tengo hoy?')).reply, /^¡Hola! 😊 Hoy \(martes 10 de noviembre\) tienes 1 cita/);
     assert.equal((await say(store, OWNER, 'gracias')).reply, '¡De nada! 😊');
@@ -426,6 +428,67 @@ const cases = {
     const c = await say(store, CUSTOMER, 'quiero corte mañana a las 12:30');
     assert.doesNotMatch(c.reply, /12:30\?|a las 12:30\. /);
     assert.match((await say(store, OWNER, 'Desbloquea el horario de mañana')).reply, /¿Vuelvo a poner el horario de siempre/);
+  },
+
+  // ---- from a real test-UI session (Nov 11) ----
+  'a bare "3" after a misunderstanding is never a price; a menu survives a message it doesn\'t understand': async () => {
+    const store = await freshStore();
+    await say(store, CUSTOMER, '¿vendéis productos?');
+    await say(store, OWNER, 'login:owner');
+    await say(store, OWNER, 'queratina');
+    await say(store, OWNER, 'mensajes');
+    await say(store, OWNER, '1');
+    assert.match((await say(store, OWNER, 'blabla')).reply, /Dime 1 \(ignorar\), 2 \(responder\) o 3/);
+    const r = await say(store, OWNER, '3. Mejor esperar 48 horas');
+    assert.match(r.reply, /¿Le envío esto[\s\S]*«Mejor esperar 48 horas»/);
+    await say(store, OWNER, 'no');
+    assert.doesNotMatch((await say(store, OWNER, '3')).reply, /€/);
+  },
+
+  '"ignora todos" warns about the unseen ones; "sin querer" offers to undo': async () => {
+    const store = await freshStore();
+    for (let i = 0; i < 7; i++) await say(store, `60011100${i}`, `¿vendéis productos de la marca ${i}?`);
+    await say(store, OWNER, 'login:owner');
+    await say(store, OWNER, 'mensajes');
+    assert.match((await say(store, OWNER, 'ignora todos')).reply, /también los 2 que todavía no has visto/);
+    await say(store, OWNER, 'sí');
+    assert.equal((await store.listHandovers(SALON)).length, 0);
+    assert.match((await say(store, OWNER, 'hemos ignorado los otros sin querer')).reply, /¿Deshago lo último que hiciste \(ignorar 7 mensajes\)\?/);
+    await say(store, OWNER, 'sí');
+    assert.equal((await store.listHandovers(SALON)).length, 7);
+    await say(store, OWNER, 'mensajes');
+    assert.match((await say(store, OWNER, 'ignora estos')).reply, /¿Quito estos 5 mensajes/);
+  },
+
+  'cancelling from a list: "todas" cancels them all; after one, the list comes back': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    for (const t of ['apunta a Ana mañana a las 10 para corte', 'apunta a Eva mañana a las 11 para corte', 'apunta a Pia mañana a las 12 para corte']) {
+      await say(store, OWNER, t); await say(store, OWNER, 'sí');
+    }
+    assert.match((await say(store, OWNER, 'cancela las citas de mañana')).reply, /¿Cancelo estas 3 citas/);
+    await say(store, OWNER, 'no');
+    await say(store, OWNER, 'cancela la cita de mañana');
+    await say(store, OWNER, '1');
+    const after = await say(store, OWNER, 'sí');
+    assert.match(after.reply, /Quedan:\n1\) .*Eva[\s\S]*¿Cancelo otra\?/);
+    assert.match((await say(store, OWNER, 'todas')).reply, /¿Cancelo estas 2 citas/);
+    await say(store, OWNER, 'sí');
+    assert.equal((await store.listAppointments(SALON)).length, 0);
+  },
+
+  'a pasted list is never an order; free time over the next days; a name for a number': async () => {
+    const store = await freshStore();
+    await say(store, CUSTOMER, 'quiero cita para corte mañana a las 10');
+    await say(store, CUSTOMER, 'sí');
+    await say(store, OWNER, 'login:owner');
+    const pasted = await say(store, OWNER, '• 10:30 +34 600 000 000 — Corte (30 min) • 11:00 +34 600 000 000 — Corte (30 min) • 16:30 x — Manicura (30 min)');
+    assert.match(pasted.reply, /me has pegado una lista/);
+    assert.equal((await store.listOwnerChanges(SALON)).length, 0);
+    assert.match((await say(store, OWNER, 'huecos libres')).reply, /^Huecos libres \(próximos días\):\nHoy[\s\S]*Mañana/);
+    assert.match((await say(store, OWNER, 'el 600 111 222 es María')).reply, /¿Le pongo «María» a \+34 600 111 222\?/);
+    await say(store, OWNER, 'sí');
+    assert.match((await say(store, OWNER, 'citas de mañana')).reply, /10:00 María — Corte/);
   },
 
   'anything else: "No te he entendido", and nothing changes': async () => {

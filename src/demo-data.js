@@ -121,13 +121,29 @@ const OWNER_DEMO_INBOX = [
   [2, 'Para tratamiento de keratina tengo: 1) 09:30  2) 16:30. ¿Cuál te va mejor?', '¿se puede lavar el pelo al día siguiente?'],
 ];
 
+// Names for demo customers known only by their number (the ones typed in the test UI)
+const DEMO_NAMES = ['María Gómez', 'Elena Torres', 'Sofía Navarro', 'Paula Romero', 'Julia Molina', 'Clara Ortiz', 'Irene Vidal',
+  'Noelia Castro', 'Rosa Iglesias', 'Alba Serrano', 'Nuria Delgado', 'Eva Morales', 'Silvia Rubio', 'Teresa Blanco', 'Lorena Prieto'];
+
 // Fills a demo salon for trying owner mode ("¿qué tengo hoy?", "¿qué me han preguntado?"). `now` is the salon's
 // wall-clock time (a Date). Runs once per salon: if the demo customers exist already, it does nothing.
 async function seedOwnerDemo(store, businessId, now, { makeIsFree, closedReason }) {
   const business = await store.getBusiness(businessId);
   if (!business) throw new Error(`Unknown business: ${businessId}`);
+  // every time: a name for the customers that only have a number, so the agenda reads like a real one
+  let named = 0;
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const taken = new Set((await store.listCustomers(businessId, today)).map(c => c.name).filter(Boolean));
+  for (const c of await store.listCustomers(businessId, today)) {
+    if (c.name || c.phone.startsWith('manual:')) continue;
+    const name = DEMO_NAMES.find(n => !taken.has(n));
+    if (!name) break;
+    await store.updateCustomer(businessId, c.id, { name });
+    taken.add(name);
+    named++;
+  }
   const known = (await store.listAgenda(businessId, {})).some(a => a.customerPhone === OWNER_DEMO_CUSTOMERS[0][0]);
-  if (known) return { created: false };
+  if (known) return { created: false, named };
   const customers = [];
   for (const [phone, name] of OWNER_DEMO_CUSTOMERS) {
     const c = await store.findOrCreateCustomer(businessId, phone);
@@ -168,7 +184,7 @@ async function seedOwnerDemo(store, businessId, now, { makeIsFree, closedReason 
   const tinte = services.find(x => x.group === 'tinte') ?? services[0];
   await store.addToWaitlist({ businessId, customerId: customers[1].id, service: tinte.group, details: [{ id: tinte.id, group: tinte.group, name: tinte.name }], date: openDays[1], timeOfDay: 'morning' });
   await store.addToWaitlist({ businessId, customerId: customers[4].id, earlier: true });
-  return { created: true, appointments: booked, inbox: OWNER_DEMO_INBOX.length, waitlist: 2 };
+  return { created: true, appointments: booked, inbox: OWNER_DEMO_INBOX.length, waitlist: 2, named };
 }
 
 module.exports = { DEMO_BUSINESSES, seedDemoData, seedOwnerDemo };

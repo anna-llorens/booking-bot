@@ -172,7 +172,7 @@ function respondOwner(message, state = {}, options = {}) {
   // ---- answers to the bot's own questions ----
   if (pending?.kind === 'confirm') {
     // after an inbox action, back to the list: "Dime otro número…"
-    const back = pending.after ? afterInbox(pending.after, pending.changes) : '';
+    const back = pending.after?.kind === 'choose' ? afterChoose(pending.after, pending.changes) : pending.after ? afterInbox(pending.after, pending.changes) : '';
     if (u.intent === 'yes') {
       newState.lastTopic = 'changed';
       return out(`Hecho ✅ ${pending.done} ${UNDO_HINT}${back}`, { changes: pending.changes });
@@ -203,6 +203,13 @@ function respondOwner(message, state = {}, options = {}) {
   }
   if (pending?.kind === 'inboxItem') {
     const h = inbox.find(x => x.id === pending.handoverId);
+    // "3. Para la queratina es mejor esperar 2 días": the option and the text together
+    const both = message.trim().match(/^([123])\s*[.):\-–]\s*(.{3,})$|^([23])\s+(.{3,})$/);
+    if (h && both) {
+      const option = +(both[1] ?? both[3]); const text = (both[2] ?? both[4]).trim();
+      if (option === 1) return ignore([h], pending.after, false);
+      return replyToCustomer(h, text, option === 3, pending.after);
+    }
     const choice = u.number ?? null;
     if (h && (choice === 1 || (u.intent === 'ignore' && !u.numbers.length && !u.all))) return ignore([h], pending.after, false);
     if (h && (choice === 2 || u.intent === 'replyChoice')) return askReplyText(h, false, pending.after);
@@ -226,9 +233,14 @@ function respondOwner(message, state = {}, options = {}) {
       if (list) newState = { ...newState, pending: list };
       return out(list ? '¿Cuáles? Dime los números, por ejemplo «ignora 1, 3 y 5».' : 'Primero te enseño los mensajes: escribe «¿qué me han preguntado?» y luego «ignora 1, 3 y 5».');
     }
+    // "ignora estos": the ones on the last page she saw
+    if (u.shown && list?.page?.length) {
+      const chosen = list.page.map(id => inbox.find(h => h.id === id)).filter(Boolean);
+      if (chosen.length) return ignore(chosen, list, true);
+    }
     if (u.all) {
       if (!inbox.length) return out('No tienes mensajes pendientes 🎉');
-      return ignore(inbox, null, true);
+      return ignore(inbox, null, true, list ? list.shown : null);
     }
     if (u.numbers.length) {
       const ids = list?.ids ?? inbox.map(h => h.id);
@@ -244,12 +256,18 @@ function respondOwner(message, state = {}, options = {}) {
     const index = n ? (n[1] ? +n[1] : ['primera', 'segunda', 'tercera', 'cuarta'].indexOf(n[2]) + 1) - 1 : -1;
     const options_ = pending.ids.map(id => appointments.find(a => a.id === id)).filter(Boolean);
     let chosen = options_[index] ?? null;
-    if (!chosen && (u.time || u.date)) {
+    if (!chosen && !u.intent && (u.time || u.date)) {
       const m = options_.filter(a => (!u.time || a.time === u.time) && (!u.date || a.date === u.date));
       if (m.length === 1) chosen = m[0];
     }
-    if (chosen) return actOnAppointment(pending.action, chosen, pending);
-    if (u.intent === 'no') return out('Vale, lo dejamos 👍');
+    // "todas": every appointment in the list
+    if (!chosen && /^(todas|todas ellas|las \d|todas las citas|todos)$/.test(u.normalizedText) && pending.action === 'cancelAppointment') {
+      return confirm({ type: 'cancelAppointments', ids: options_.map(a => a.id), summary: `cancelar ${plural(options_.length, 'cita', 'citas')}` },
+        `¿Cancelo ${options_.length === 1 ? 'esta cita' : `estas ${options_.length} citas`}?\n${options_.map(apptLineWithDay).join('\n')}\nEl bot no avisa a las clientas: avísalas tú.`,
+        `${plural(options_.length, 'cita cancelada', 'citas canceladas')}.`);
+    }
+    if (chosen) return actOnAppointment(pending.action, chosen, { ...pending, after: pending.action === 'cancelAppointment' ? pending : null });
+    if (u.intent === 'no' || /^(ya esta|ya|listo|nada mas|ninguna)$/.test(u.normalizedText)) return out('Vale, lo dejamos 👍');
     if (!u.intent) return out(`¿Cuál de ellas? Dime el número (1-${options_.length}).`, { state: (newState = { ...newState, pending }) });
   }
   const giveUp = u.intent === 'no' || /^(cancela|cancelar|dejalo|nada|olvidalo|da igual)$/.test(u.normalizedText);
@@ -311,19 +329,27 @@ function respondOwner(message, state = {}, options = {}) {
   // ---- small talk, like the customer bot, with the day's summary ----
   if (u.intent === 'greeting') {
     const h = today.getHours();
-    return out(`${h >= 6 && h < 14 ? '¡Buenos días!' : h >= 14 && h < 21 ? '¡Buenas tardes!' : '¡Hola!'} 😊 ${daySummary(true)} ¿En qué te ayudo?`);
+    return out(`${h >= 6 && h < 14 ? '¡Buenos días!' : h >= 14 && h < 21 ? '¡Buenas tardes!' : '¡Hola!'} 😊 ¿En qué te ayudo? (si quieres el resumen del día, dime «resumen»)`);
   }
-  if (u.intent === 'howAreYou') return out(`¡Muy bien, gracias! 😊 ¿Y tú? ${daySummary(true)}`);
+  if (u.intent === 'howAreYou') return out('¡Muy bien, gracias! 😊 ¿Y tú? ¿En qué te ayudo?');
   if (u.intent === 'presence') return out('¡Aquí estoy! 😊 ¿En qué te ayudo?');
   if (u.intent === 'thanks') return out('¡De nada! 😊');
   if (u.intent === 'bye') return out('¡Hasta luego! 👋 Cuando quieras, aquí estoy.');
   if (u.intent === 'dayStatus') return out(daySummary(false));
   if (u.intent === 'feedback') return out('Tienes razón, todavía estoy aprendiendo 😅 Lo que no entiendo lo guardo para que me enseñen. Mientras, escribe *ayuda* para ver lo que sé hacer.');
   if (u.intent === 'revenue') return out(revenue(u.range));
-  if (u.intent === 'servicesList') return out(servicesList(u));
+  if (u.intent === 'servicesList') return out(u.all ? allServices() : servicesList(u));
   if (u.intent === 'addService') return addService({ name: u.name, duration: u.duration, price: u.price, priceAsked: u.price != null });
   if (u.intent === 'notSupported') return out(NOT_SUPPORTED_REPLIES[u.topic] ?? NOT_SUPPORTED_REPLIES.other);
   if (u.intent === 'wait') return out('Vale, aquí estoy cuando quieras 😊');
+  if (u.intent === 'pasted') return out('Parece que me has pegado una lista 😅 No cambio nada. ¿Qué quieres hacer con ella? Por ejemplo «cancela la de las 10:30» o «mueve la de las 11:00 a las 12:00».');
+  if (u.intent === 'oops') {
+    if (!lastChange) return out('Todavía no has cambiado nada desde aquí, así que no hay nada que recuperar 😊');
+    return confirm({ type: 'undo', changeId: lastChange.id, summary: lastChange.data?.summary ?? lastChange.type },
+      `Vaya 😅 ¿Deshago lo último que hiciste (${lastChange.data?.summary ?? lastChange.type})?`, 'Deshecho ↩️ Todo como estaba.');
+  }
+  if (u.intent === 'customersList') return out(customersList());
+  if (u.intent === 'nameCustomer') return nameCustomer(u.phone, u.name);
   if (u.intent === 'businessName') return out(`Tu salón se llama «${business.name}». Para cambiarlo: «quiero cambiar el nombre del salón».`);
   if (u.intent === 'stats') return out(stats(u.range));
   if (u.intent === 'changesHistory') return out(changesHistory());
@@ -348,6 +374,8 @@ function respondOwner(message, state = {}, options = {}) {
     }
     return changeService(matches[0], u.serviceId);
   }
+  if (!u.intent && u.closed && state.lastAgenda?.date) return closeDay(state.lastAgenda.date);
+  if (u.intent === 'cancelAppointment' && !u.name && !u.date && !u.time && state.lastAgenda?.date) u.date = state.lastAgenda.date;
   // follow-ups without a verb: "mejor 15 euros" (the last service), "solo las de la tarde" (the last agenda)
   if (!u.intent && u.price != null && !u.serviceId && state.lastServiceId && !u.date && !u.time) return setPriceFor(findService(catalog, state.lastServiceId), u.price);
   if (!u.intent && state.lastTopic === 'agenda' && state.lastAgenda && (u.timeOfDay || u.serviceId || /\b(cuantas|total)\b/.test(u.normalizedText))) {
@@ -595,6 +623,16 @@ function respondOwner(message, state = {}, options = {}) {
   // a bare day after a question about the agenda was handled above; anything else is not understood
   const again = state.lastFallback;
   newState.lastFallback = true;
+  // inside a menu (a message, a list to choose from): stay there and say what it expects
+  const MENU_HINTS = {
+    inboxItem: 'Dime 1 (ignorar), 2 (responder) o 3 (responder y que lo conteste sola), o «3. el texto» de una vez.',
+    inbox: 'Dime el número de un mensaje, «ver más» o «ignora 1, 3 y 5».',
+    choose: 'Dime el número de la cita, «todas» o «ya está».',
+  };
+  if (state.pending && MENU_HINTS[state.pending.kind]) {
+    newState = { ...newState, pending: state.pending };
+    return out(`No te he entendido 😅 ${MENU_HINTS[state.pending.kind]}`, { fallback: true });
+  }
   return out(again ? NOT_UNDERSTOOD_AGAIN : NOT_UNDERSTOOD, { fallback: true });
   }
 
@@ -907,6 +945,42 @@ function respondOwner(message, state = {}, options = {}) {
 
   // ---- business data ----
 
+  // after cancelling one appointment from a list: the others, with the same numbers
+  function afterChoose(list, changes) {
+    const done = new Set(changes.map(c => c.appointmentId));
+    const left = list.ids.filter(id => !done.has(id) && appointments.some(a => a.id === id));
+    if (!left.length) return '';
+    newState = { ...newState, pending: { ...list, kind: 'choose', ids: left } };
+    const items = left.map(id => appointments.find(a => a.id === id));
+    return `\nQuedan:\n${items.map((a, i) => `${i + 1}) ${dayName(a.date)}, ${a.time} ${customerName(a)} — ${apptService(a)}`).join('\n')}\n¿Cancelo otra? Dime el número, «todas» o «ya está».`;
+  }
+
+  function customersList() {
+    const people = customers.filter(c => c.visits > 0).sort((a, b) => (a.next?.date ?? '9') .localeCompare(b.next?.date ?? '9'));
+    if (!people.length) return 'Todavía no tienes clientas con citas.';
+    const line = c => `• ${c.name ?? formatPhone(c.phone) ?? 'sin nombre'}${c.next ? ` — próxima: ${dayName(c.next.date)} ${c.next.time}` : ''}`;
+    const nameless = people.filter(c => !c.name).length;
+    return `Tienes ${plural(people.length, 'clienta', 'clientas')} con citas:\n${people.slice(0, 15).map(line).join('\n')}${people.length > 15 ? `\n… y ${people.length - 15} más` : ''}` +
+      `\n\nPara ver una: «busca a Laura».${nameless ? ` ${plural(nameless, 'no tiene', 'no tienen')} nombre: dime «el 600 000 000 es María».` : ''}`;
+  }
+
+  // "el 600 000 000 es María": a name for a customer known only by her number
+  function nameCustomer(phone, name) {
+    const digits = phone.length === 9 ? `34${phone}` : phone;
+    const c = customers.find(x => x.phone === digits);
+    if (!c) return out(`No tengo ninguna clienta con el número ${formatPhone(digits) ?? phone} 🤔`);
+    if (c.name === name) return out(`Ya se llama ${name} 😊`);
+    return confirm({ type: 'nameCustomer', customerId: c.id, name, previous: { name: c.name ?? null }, summary: `${formatPhone(c.phone)} es ${name}` },
+      `¿Le pongo «${name}» a ${formatPhone(c.phone)}${c.name ? ` (ahora: ${c.name})` : ''}?`, `Ahora ${formatPhone(c.phone)} es ${name}.`);
+  }
+
+  // every service, one line per group
+  function allServices() {
+    const order = Object.keys(CATEGORY_LABELS);
+    const cats = [...new Set(catalog.map(x => x.category ?? 'otros'))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    return `Todos tus servicios:\n${cats.map(c => `${CATEGORY_LABELS[c] ?? c}: ${catalog.filter(x => (x.category ?? 'otros') === c).map(x => `${serviceName(x)}${x.active === false ? ' (desactivado)' : ''}`).join(', ')}`).join('\n\n')}\n\nPara ver precios y duraciones de un grupo: «servicios de color».`;
+  }
+
   function weekBounds() {
     const d = fromISODate(todayISO);
     const monday = new Date(d); monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
@@ -1013,7 +1087,7 @@ function respondOwner(message, state = {}, options = {}) {
     const rest = all ? open : open.filter(h => pos(h) > from).slice(0, INBOX_PAGE);
     if (!rest.length) return showInbox(0, false);
     const shown = pos(rest.at(-1));
-    newState = { ...newState, pending: { kind: 'inbox', ids, shown } };
+    newState = { ...newState, pending: { kind: 'inbox', ids, shown, page: rest.map(h => h.id) } };
     const head = from === 0 || all
       ? `Tienes ${plural(open.length, 'mensaje', 'mensajes')} sin contestar${!all && open.length > rest.length ? ` (te enseño ${rest.length})` : ''}:`
       : 'Más mensajes sin contestar:';
@@ -1050,10 +1124,12 @@ function respondOwner(message, state = {}, options = {}) {
   }
 
   // Ignore messages: one chosen from its options goes at once (that was the choice), several are confirmed
-  function ignore(list, back, ask) {
+  function ignore(list, back, ask, seen = null) {
     const change = { type: 'ignoreHandovers', ids: list.map(h => h.id), summary: `ignorar ${plural(list.length, 'mensaje', 'mensajes')}` };
     if (ask) {
-      return confirm(change, `¿Quito ${list.length === 1 ? `el mensaje de ${sender(list[0])}` : `estos ${list.length} mensajes`} de pendientes? Siguen en el historial de cada clienta.`,
+      // "ignora todos" after seeing only some: say it clearly
+      const unseen = seen != null && seen < list.length ? ` Ojo: también los ${list.length - seen} que todavía no has visto (para quitar solo los que te he enseñado, dime «ignora estos»).` : '';
+      return confirm(change, `¿Quito ${list.length === 1 ? `el mensaje de ${sender(list[0])}` : `${seen != null ? 'los' : 'estos'} ${list.length} mensajes`} de pendientes?${unseen} Siguen en el historial de cada clienta.`,
         `${list.length === 1 ? 'Mensaje ignorado' : `${list.length} mensajes ignorados`}.`, '', back && list.length < inbox.length ? back : null);
     }
     return out(`Ignorado ✅ ${UNDO_HINT}${back ? afterInbox(back, [change]) : ''}`, { changes: [change] });
@@ -1088,11 +1164,11 @@ function respondOwner(message, state = {}, options = {}) {
           .flatMap(([a, b]) => (part ? part.map(([x, y]) => [Math.max(a, x), Math.min(b, y)]).filter(([m, n]) => n - m >= (business.slotMinutes ?? 30)) : [[a, b]]));
         return stretches.length ? `${cap(dayText(d, today))}${filters ? ` ${filters}` : ''}: ${stretches.map(([a, b]) => `de ${H.clock(a)} a ${H.clock(b)}`).join(', ')}` : `${cap(dayText(d, today))}${filters ? ` ${filters}` : ''}: nada libre`;
       }).filter(Boolean);
-      return lines.length ? `Huecos libres:\n${lines.join('\n')}` : 'Esos días está cerrado.';
+      return lines.length ? `Huecos libres${range === 'next' ? ' (próximos días)' : ''}:\n${lines.join('\n')}` : 'Esos días está cerrado.';
     }
     if (from) {
       const list = appointments.filter(a => a.date >= from && a.date <= to && keep(a)).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
-      const label = { nextWeek: 'La semana que viene', month: 'Este mes', nextMonth: 'El mes que viene' }[range] ?? 'Esta semana';
+      const label = { nextWeek: 'La semana que viene', month: 'Este mes', nextMonth: 'El mes que viene', upcoming: 'De aquí en adelante', next: 'Los próximos 7 días' }[range] ?? 'Esta semana';
       if (count) return `${label}${filters ? ` ${filters}` : ''}: ${plural(list.length, 'cita', 'citas')} en total.`;
       if (!list.length) return `${label} (${rangeText(from, to)}) no tienes citas${filters ? ` ${filters}` : ''}.`;
       const days = [...new Set(list.map(a => a.date))];
@@ -1174,7 +1250,7 @@ function respondOwner(message, state = {}, options = {}) {
       return confirm(
         { type: 'cancelAppointment', appointmentId: a.id, previous: { status: 'booked' }, summary: `cancelar la cita de ${customerName(a)} ${dayText(a.date, today)} a las ${a.time}` },
         `¿Cancelo la cita de ${customerName(a)} ${dayText(a.date, today)} a las ${a.time} (${a.name})?`,
-        `Cita de ${customerName(a)} cancelada. Recuerda avisarla: el bot no le escribe por su cuenta.`);
+        `Cita de ${customerName(a)} cancelada. Recuerda avisarla: el bot no le escribe por su cuenta.`, '', extra.after ?? null);
     }
     return moveAppointment({ newDate: extra.newDate ?? null, newTime: extra.newTime ?? null }, a.id);
   }

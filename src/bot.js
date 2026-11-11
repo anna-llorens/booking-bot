@@ -273,6 +273,8 @@ async function applyOwnerChange(store, businessId, change) {
   } else if (change.type === 'renameBusiness') {
     previous = { name: business.name };
     await store.saveBusiness({ ...business, name: change.name });
+  } else if (change.type === 'nameCustomer') {
+    await store.updateCustomer(businessId, change.customerId, { name: change.name });
   } else if (change.type === 'sendMessage') {
     await store.addMessage({ businessId, customerId: change.customerId, direction: 'out', text: change.text, intent: 'owner-message' });
   } else if (change.type === 'addService') {
@@ -320,6 +322,8 @@ async function undoOwnerChange(store, businessId, changeId) {
   } else if (c.type === 'renameBusiness') {
     const business = await store.getBusiness(businessId);
     await store.saveBusiness({ ...business, name: c.previous.name });
+  } else if (c.type === 'nameCustomer') {
+    await store.updateCustomer(businessId, c.data.customerId, { name: c.previous?.name ?? null });
   } else if (c.type === 'sendMessage') {
     // a message already sent can't be taken back: nothing to undo
   } else if (c.type === 'addService') {

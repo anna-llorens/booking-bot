@@ -10,9 +10,12 @@
     "demo": "node scripts/demo.js",
     "import": "node scripts/import-whatsapp.js",
     "merge": "node scripts/merge-phrases.js",
-    "build-dictionary": "node scripts/build-dictionary.js"
+    "build-dictionary": "node scripts/build-dictionary.js",
+    "sessions": "node scripts/sessions.js"
   },
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "license": "UNLICENSED",
   "private": true
 }
