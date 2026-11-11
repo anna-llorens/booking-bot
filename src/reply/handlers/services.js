@@ -9,11 +9,7 @@ function handleServices(ctx) {
     useRecentServices, firstFreeDay, nextStep, moreTimes, cancelAppointment, book } = ctx;
   {
     // the salon's own catalog, grouped by category; one category in detail if she asks for it
-    const CATEGORY_LABELS = {
-      peluqueria: '💇 Peluquería', coloracion: '🎨 Color', tratamientos_capilares: '✨ Tratamientos capilares',
-      barberia: '🧔 Barbería', estetica_facial: '🧖 Facial', estetica_corporal: '💆 Corporal',
-      depilacion: '🌿 Depilación', manicura_pedicura: '💅 Manos y pies', pestanas_cejas: '👁️ Cejas y pestañas',
-    };
+    const { CATEGORY_LABELS } = F;
     const priceText = list => { const p = list.map(s => s.price).filter(x => x != null); return p.length ? ` (desde ${euros(Math.min(...p))})` : ''; };
     const keepBooking = BOOKING_QUESTIONS.includes(state.lastQuestion);
     if (!keepBooking) { state.lastQuestion = 'service'; state.proposals = []; }

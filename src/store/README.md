@@ -13,6 +13,7 @@ Implementation today: `SqliteStore` (`sqlite-store.js`). Get one with `createSto
 | `saveBusiness({ id, name, settings })` | the business (insert or update) |
 | `listServices(businessId, { includeInactive = false })` | active services (or all, for owner mode): `[{ id, group, category, name, duration, price, synonyms, active, description }]` |
 | `updateService(businessId, id, { price?, duration?, active? })` | the service, or `null` |
+| `addService(businessId, service)` / `deleteService(businessId, id)` | — owner mode: a new service at the end of the catalog (and undoing it) |
 | `saveServices(businessId, services)` | replaces the salon's whole catalog |
 
 ## Customers

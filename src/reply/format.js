@@ -85,4 +85,12 @@ function groupWeekdays(textByDay) {
     : g.days.length === 2 ? `los ${H.DAY_PLURALS[g.days[0]]} y ${H.DAY_PLURALS[g.days[1]]}` : `de ${H.DAY_NAMES[g.days[0]]} a ${H.DAY_NAMES[g.days.at(-1)]}` }));
 }
 
-module.exports = { euros, TIME_OF_DAY_RANGES, toMinutes, toHHMM, toISODate, fromISODate, formatDate, displayName, serviceLabel, listTimes, NOTE_HINT, noteFrom, lowerFirst, COMMON_SERVICES, serviceExamples, groupWeekdays };
+// Service categories (catalog.json "category") as shown to people, customers and owner alike
+const CATEGORY_LABELS = {
+  peluqueria: '💇 Peluquería', coloracion: '🎨 Color', tratamientos_capilares: '✨ Tratamientos capilares',
+  barberia: '🧔 Barbería', estetica_facial: '🧖 Facial', estetica_corporal: '💆 Corporal',
+  depilacion: '🌿 Depilación', manicura_pedicura: '💅 Manos y pies', pestanas_cejas: '👁️ Cejas y pestañas',
+  otros: '➕ Otros',
+};
+
+module.exports = { CATEGORY_LABELS, euros, TIME_OF_DAY_RANGES, toMinutes, toHHMM, toISODate, fromISODate, formatDate, displayName, serviceLabel, listTimes, NOTE_HINT, noteFrom, lowerFirst, COMMON_SERVICES, serviceExamples, groupWeekdays };

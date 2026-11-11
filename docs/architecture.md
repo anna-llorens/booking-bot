@@ -175,7 +175,15 @@ The salon owner manages the salon from the same WhatsApp chat: agenda, closures,
 | `disableService`, `enableService` | "ya no hago permanente", "vuelvo a hacer permanente" | The service's `active` flag (inactive services are not offered to customers) |
 | `bookManual` | "apunta a Lucía mañana a las 10 para corte" | An appointment for a customer with no phone (one per name, phone `manual:lucia`); a taken time offers others |
 | `cancelAppointment`, `moveAppointment` | "cancela la cita de Ana del jueves", "mueve la de las 17:00 del viernes a las 18:00" | Asks which one if several match. The customer is not messaged: the owner tells her |
+| `greeting`, `howAreYou`, `presence`, `thanks`, `bye` | "hola", "¿qué tal?", "¿estás?", "gracias", "adiós" | Read with the customer bot's rules (understand.js). "Hola" and "¿qué tal?" add a short summary of the day |
+| `dayStatus` | "¿qué tal ha ido el día?", "resumen de hoy" | "De momento llevas 4 de 6 citas. Ahora mismo estás con… La siguiente, a las…", then messages waiting and the waiting list |
+| `revenue` | "cobros", "¿cuánto he ganado hoy?" | Honest: what is charged at the till (with extras such as shampoo or masks) is not visible to the bot; it gives only a floor from the catalog prices |
+| `servicesList` | "servicios", "servicios de color" | The catalog by group, or one group with durations and prices |
+| `addService` | "añade un servicio", "añade el servicio lavado con masaje, 45 min, 20 €" | Asks for what is missing (name, duration, price or «sin precio»), then adds it in the group «Otros» with its name as synonym. Undo deletes it |
+| `feedback` | "te queda mucho por entrenar" | Admits it and points to *ayuda* |
 | `help`, `yes`, `no`, `undo`, `logout` | "ayuda", "sí", "no", "deshacer", "salir" | — |
+
+A message not understood twice in a row gets a different reply the second time ("Sigo sin entenderte…"), like the customer bot.
 
 **Learned answers.** `settings.learnedAnswers` is a list of `[{ question, text, answer }]`, where `question` is normalized.
 - The customer bot uses one (`src/reply/learned.js`) only when it would otherwise hand the message over, and only for the same message or a very close one (accents, case, typos up to 15 % of the length; no AI).

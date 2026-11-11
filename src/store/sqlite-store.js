@@ -175,6 +175,16 @@ class SqliteStore {
     return this.db.prepare(`SELECT * FROM services WHERE business_id = ? ${includeInactive ? '' : 'AND active = 1'} ORDER BY position`)
       .all(businessId).map(rowToService);
   }
+  // Adds one service at the end of the catalog (owner mode: "añade un servicio")
+  async addService(businessId, s) {
+    const pos = this.db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM services WHERE business_id = ?').get(businessId).p;
+    this.db.prepare(`INSERT INTO services (business_id, id, group_id, category, name, duration, price, synonyms, active, position, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(businessId, s.id, s.group ?? s.id, s.category ?? null, s.name, s.duration ?? null,
+      s.price ?? null, JSON.stringify(s.synonyms ?? []), pos, s.description ?? null);
+  }
+  async deleteService(businessId, id) {
+    this.db.prepare('DELETE FROM services WHERE business_id = ? AND id = ?').run(businessId, id);
+  }
   // Changes one service: { price, duration, active }
   async updateService(businessId, id, patch) {
     const cur = this.db.prepare('SELECT * FROM services WHERE business_id = ? AND id = ?').get(businessId, id);

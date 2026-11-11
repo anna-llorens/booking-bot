@@ -278,6 +278,52 @@ const cases = {
     assert.match((await say(store, OWNER, 'citas del mes')).reply, /Este mes tienes 9 citas/);
   },
 
+  'small talk like the customer bot: "hola" and "¿qué tal ha ido el día?" give the day\'s summary': async () => {
+    const store = await freshStore();
+    await say(store, CUSTOMER, 'quiero cita para corte hoy a las 12');
+    await say(store, CUSTOMER, 'sí');
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, 'hola')).reply, /^¡Buenos días! 😊 Hoy tienes 1 cita; la primera, a las 12:00 con \+34 600 111 222 \(Corte\)\. ¿En qué te ayudo\?$/);
+    assert.match((await say(store, OWNER, '¿qué tal ha ido el día?')).reply, /Hoy tienes 1 cita/);
+    assert.match((await say(store, OWNER, 'hola, ¿qué tengo hoy?')).reply, /^¡Hola! 😊 Hoy \(martes 10 de noviembre\) tienes 1 cita/);
+    assert.equal((await say(store, OWNER, 'gracias')).reply, '¡De nada! 😊');
+  },
+
+  '"cobros": what is charged at the till is not known; only a floor from the catalog prices': async () => {
+    const store = await freshStore();
+    await say(store, CUSTOMER, 'quiero cita para corte hoy a las 12');
+    await say(store, CUSTOMER, 'sí');
+    await say(store, OWNER, 'login:owner');
+    const r = await say(store, OWNER, 'cobros');
+    assert.match(r.reply, /yo no lo veo/);
+    assert.match(r.reply, /como mínimo 15 €/);
+  },
+
+  'add a service step by step; customers can book it': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    assert.match((await say(store, OWNER, 'quiero añadir un servicio')).reply, /¿Cómo se llama/);
+    assert.match((await say(store, OWNER, 'Lavado con masaje')).reply, /¿Cuánto dura/);
+    assert.match((await say(store, OWNER, '45 min')).reply, /¿Qué precio/);
+    assert.match((await say(store, OWNER, '20')).reply, /¿Añado «Lavado con masaje» \(45 min · 20 €\)\?/);
+    await say(store, OWNER, 'sí');
+    assert.ok((await store.listServices(SALON)).some(x => x.name === 'Lavado con masaje' && x.price === 20));
+    const c = await say(store, CUSTOMER, 'quiero un lavado con masaje el viernes');
+    assert.match(c.reply, /lavado con masaje/i);
+    assert.match((await say(store, OWNER, 'deshacer')).reply, /Deshecho/);
+    assert.ok(!(await store.listServices(SALON)).some(x => x.name === 'Lavado con masaje'));
+    assert.match((await say(store, OWNER, 'añade el servicio queratina')).reply, /Ya lo tienes: Tratamiento de keratina/);
+  },
+
+  'not understood twice: the second reply is different': async () => {
+    const store = await freshStore();
+    await say(store, OWNER, 'login:owner');
+    const a = await say(store, OWNER, 'asdfg');
+    const b = await say(store, OWNER, 'qwerty');
+    assert.match(a.reply, /^No te he entendido/);
+    assert.match(b.reply, /^Sigo sin entenderte/);
+  },
+
   'anything else: "No te he entendido", and nothing changes': async () => {
     const store = await freshStore();
     await say(store, OWNER, 'login:owner');

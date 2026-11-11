@@ -22,7 +22,7 @@ const REPLACEMENTS = {
   vier: 'viernes', vie: 'viernes', sab: 'sabado', dom: 'domingo', finde: 'fin de semana',
   bienes: 'viernes', juebes: 'jueves', jeves: 'jueves', savado: 'sabado', sabdo: 'sabado',
   miercole: 'miercoles', lune: 'lunes',
-  cits: 'cita', cta: 'cita', zita: 'cita', alisaso: 'alisado',
+  cits: 'cita', cta: 'cita', zita: 'cita', ciras: 'citas', citsa: 'citas', alisaso: 'alisado',
   ueco: 'hueco', guecos: 'huecos', kiero: 'quiero', kieres: 'quieres', aora: 'ahora',
   ago: 'hago', aser: 'hacer', cortame: 'cortarme', peindo: 'peinado', ola: 'hola',
   dema: 'manana', // Catalan "demà" (tomorrow)

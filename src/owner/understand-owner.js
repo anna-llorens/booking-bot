@@ -6,13 +6,14 @@
 //
 //   understandOwner(message, { today, catalog }) → { intent, ...fields }
 //
-// intent: agenda | inbox | inboxMore | ignore | replyChoice | teachChoice | learnedAnswers | forgetAnswer
+// intent: greeting | howAreYou | presence | thanks | bye | dayStatus | revenue | feedback | servicesList | addService
+//         | agenda | inbox | inboxMore | ignore | replyChoice | teachChoice | learnedAnswers | forgetAnswer
 //         | waitlist | hours | serviceInfo | getPrice | getDuration | setPrice | setDuration
 //         | disableService | enableService | closeDate | closeRange | openDate | setDayHours | setWeeklyHours
 //         | bookManual | cancelAppointment | moveAppointment | help | yes | no | undo | logout | null
 // A bare number ("2") comes as intent null with `number`: its meaning depends on what the bot just showed.
 const {
-  normalize, basicNormalize, WEEKDAYS, MONTHS, NUMBER_WORDS, detectDate, detectTime, detectServices,
+  understand, normalize, basicNormalize, WEEKDAYS, MONTHS, NUMBER_WORDS, detectDate, detectTime, detectServices,
 } = require('../understand');
 
 const MONTH_RE = MONTHS.join('|');
@@ -41,8 +42,21 @@ const FORGET = /^(olvida|olvidate de|borra|quita|elimina) (la )?(respuesta )?(ap
 const INBOX = /\b(que me han (preguntado|escrito|dicho|pedido)|bandeja|mensajes (pendientes|sin (contestar|responder|leer))|preguntas (pendientes|sin contestar)|que (hay|tengo) (pendiente|sin contestar)|quien me ha escrito|pendientes de contestar)\b/;
 const WAITLIST = /\b(lista de espera|quien (esta|hay) esperando|en espera)\b/;
 const HOURS_QUERY = /\b(que horario tengo|cual es mi horario|mi horario|horario (actual|de ahora)|que dias (cierro|cerramos|tengo cerrado|abro|abrimos)|que cierres tengo|cuando (cierro|cerramos) por vacaciones)\b/;
-const AGENDA = /\b(que tengo|tengo (citas|algo|gente|alguien|clientas?)|cuantas citas|cuantas clientas|citas (de|del|para|hoy|manana|esta|la|el)|agenda|quien viene|a quien tengo|que hay (hoy|manana|el|esta|la)|como (tengo|voy|va|esta) (el dia|la semana|la agenda|hoy|manana|el)|mis citas|las citas|que citas)\b|^(y )?(citas|hoy|manana)$/;
+const AGENDA = /^(y )?(del|este|el|todo el|de este) mes( que viene)?$|^(y )?(esta|la) semana( que viene)?$|^(el )?calendario$|^(la )?agenda$|\b(que tengo|tengo (citas|algo|gente|alguien|clientas?)|cuantas citas|cuantas clientas|citas (de|del|para|hoy|manana|esta|la|el)|agenda|quien viene|a quien tengo|que hay (hoy|manana|el|esta|la)|como (tengo|voy|va|esta) (el dia|la semana|la agenda|hoy|manana|el)|mis citas|las citas|que citas)\b|^(y )?(citas|hoy|manana)$/;
 const QUESTION = /\b(cuanto|cuantos|a cuanto|que precio|precio|cuesta|vale|valen|cobro|cobramos|dura|tarda)\b/;
+
+// ---- the day, money, small talk (greetings and thanks come from the customer bot: understand.js) ----
+// "¿qué tal ha ido el día?", "¿cómo va el día?", "resumen de hoy" (not "¿cómo va la semana?": that is the agenda)
+const DAY_STATUS = /\b((que tal|como) (ha ido|ha sido|va|te ha ido|me ha ido|esta yendo|llevo|llevamos|vamos|voy)( el dia| hoy| la manana| la tarde| la jornada)?|que tal (el dia|hoy|la manana|la tarde|la jornada)|resumen( del dia| de hoy)?|como va todo)\b/;
+const REVENUE = /\b(cobros|cobrado|cuanto (he|hemos|llevo|llevamos) (ganado|facturado|cobrado|hecho|sacado)|facturacion|facturado|caja|ganancias|ingresos|cuanto dinero)\b/;
+const FEEDBACK = /\b(te queda mucho|entrenar|no (sabes|entiendes) (nada|mucho)|eres (tonto|tonta|malo|mala|inutil)|no (sirves|funcionas)|vaya bot|que bot mas)\b/;
+const PRESENCE = /^(hola )?(estas|estais|hay alguien|me (lees|oyes))( (ahi|por ahi))?$/;
+const HOW_ARE_YOU = /\b(que tal( estas)?|como (estas|andas|te va|va todo)|todo bien)$/;
+const BYE = /^(adios|hasta luego|hasta manana|hasta pronto|chao|chau|bye|nos vemos|buenas noches)( (gracias|guapa|bonita))?$/;
+const GREET_START = /^(hola|buenas|buenos dias|buenas tardes|hey|ey)\b/;
+const SERVICES_LIST = /^(los |mis |ver |ver los |lista de |que )?(servicios|catalogo|carta|tarifas|precios)( (que (tengo|hago|ofrezco|hay)|tengo|hay))?$|^(servicios|precios) de .+$/;
+const ADD_SERVICE = /\b(anadir|anade|anademe|nuevo|nueva|crear|crea|creame|agregar|agrega|meter|mete) (un |el |otro |una |la )?(servicio|tratamiento)\b|\b(servicio|tratamiento) nuevo\b/;
+const EXISTS = /\b(esta|estan|existe|existen|tenemos|tengo|tienes|hay|ofrecemos|ofrezco|hacemos|hago)\b/;
 
 // ---- changes ----
 const CANCEL_V = /\b(cancela|cancelame|cancelale|anula|anulale|borra|borrale|elimina|quita|quitale)\b/;
@@ -248,7 +262,8 @@ function agendaRange(t, today) {
 function understandOwner(message, { today, catalog = [] } = {}) {
   if (!(today instanceof Date) || Number.isNaN(today.getTime())) throw new TypeError('understandOwner(): pass { today } as a valid Date');
   const t = normalize(message);
-  const base = { text: message, normalizedText: t };
+  // "hola, ¿qué tengo hoy?": the greeting is answered too (reply-owner puts "¡Hola!" before the answer)
+  const base = { text: message, normalizedText: t, greeting: GREET_START.test(t) };
   const r = fields => ({ ...base, ...fields });
   const date = detectDate(t, today);
 
@@ -268,6 +283,15 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   if (TEACH_CHOICE.test(t)) return r({ intent: 'teachChoice' });
   if (LEARNED.test(t)) return r({ intent: 'learnedAnswers' });
   if (INBOX.test(t)) return r({ intent: 'inbox' });
+  if (FEEDBACK.test(t)) return r({ intent: 'feedback' });
+  if (REVENUE.test(t)) return r({ intent: 'revenue' });
+  if (DAY_STATUS.test(t) && (!date || iso(date) === iso(today)) && !/\b(semana|mes)\b/.test(t)) return r({ intent: 'dayStatus' });
+  if (ADD_SERVICE.test(t)) {
+    // "añade el servicio lavado con masaje, 45 min, 20 €": what comes after "servicio" is its name
+    const name = message.replace(/^.*?\b(servicio|tratamiento)\b( nuevo)?( que se llama| llamado)?\s*/i, '').split(/[,;:]|\s\d/)[0].trim().replace(/[.!?¿¡]+$/, '');
+    return r({ intent: 'addService', name: name || null, duration: parseDuration(t), price: parsePrice(message) });
+  }
+  if (SERVICES_LIST.test(t)) return r({ intent: 'servicesList', category: understand(message, { today, services: catalog }).category });
   if (WAITLIST.test(t)) return r({ intent: 'waitlist' });
   if (HOURS_QUERY.test(t)) return r({ intent: 'hours' });
 
@@ -295,6 +319,10 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   // the catalog: prices, durations, services on and off
   if (service) {
     const asking = /\?/.test(message) || /^(cuanto|a cuanto|que precio|cual es el precio|precio)\b/.test(t);
+    // "lavado + secado a mano, ¿ese servicio está?": each service named, with its duration and price
+    if (asking && EXISTS.test(t) && !QUESTION.test(t)) {
+      return r({ intent: 'serviceInfo', serviceId: service, serviceIds: detectServices(t, catalog).filter(s => s.id !== 'LAST').map(s => s.id) });
+    }
     if (DURATION_V.test(t) && duration && !asking) return r({ intent: 'setDuration', serviceId: service, duration });
     if (DURATION_V.test(t) && (asking || !duration) && /\b(cuanto|cuantos|que)\b/.test(t)) return r({ intent: 'getDuration', serviceId: service });
     // "queratina 4h", "la queratina son 4 horas", "ponle 3 horas a la queratina"
@@ -330,6 +358,13 @@ function understandOwner(message, { today, catalog = [] } = {}) {
   if (AGENDA.test(t)) return r({ intent: 'agenda', ...agendaRange(t, today) });
 
   // bare pieces: a follow-up ("¿y mañana?") or the answer to a question the bot asked
+  // small talk, read like the customer bot reads it
+  if (PRESENCE.test(t)) return r({ intent: 'presence' });
+  if (BYE.test(t)) return r({ intent: 'bye' });
+  const customer = understand(message, { today, services: catalog });
+  if (customer.intent === 'greeting') return r({ intent: HOW_ARE_YOU.test(t) ? 'howAreYou' : 'greeting' });
+  if (customer.intent === 'thanks') return r({ intent: 'thanks' });
+
   const number = t.match(/^(?:el |la |numero |opcion )?(\d{1,2})$/);
   return r({
     intent: null, number: number ? +number[1] : null, date: date && iso(date), time: detectTime(t), serviceId: service, price, duration,

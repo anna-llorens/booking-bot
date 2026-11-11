@@ -17,8 +17,9 @@
 const H = require('../hours');
 const { understandOwner } = require('./understand-owner');
 const { closedReason } = require('../reply/slots');
-const { euros, fromISODate } = require('../reply/format');
-const { normalize } = require('../understand');
+const { euros, fromISODate, CATEGORY_LABELS } = require('../reply/format');
+const { normalize, detectServices } = require('../understand');
+const { parseDuration, parsePrice } = require('./understand-owner');
 
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -67,18 +68,22 @@ const HELP = [
   '💶 Servicios: «queratina» (ver duración y precio), «queratina 4h», «sube el tinte a 38», «¿cuánto cobro por las mechas?», «ya no hago permanente»',
   '✍️ Citas: «apunta a Lucía mañana a las 10 para corte», «cancela la cita de Ana del jueves», «mueve la de las 17:00 del viernes a las 18:00»',
   '📥 «¿qué me han preguntado?» y luego un número: ignorar, responder a la clienta o enseñarle la respuesta al bot · «ignora todos» · «¿qué respuestas has aprendido?»',
-  '⏳ «¿quién hay en lista de espera?»',
+  '⏳ «¿quién hay en lista de espera?» · 📊 «¿qué tal ha ido el día?» · ➕ «añade un servicio» · 🗂️ «servicios»',
   '↩️ «deshacer» deshace el último cambio · 👋 «salir» para salir del modo dueña',
 ].join('\n');
 const NOT_UNDERSTOOD = 'No te he entendido 😅 Escribe *ayuda* para ver ejemplos.';
+// the second time in a row: not the same words again
+const NOT_UNDERSTOOD_AGAIN = 'Sigo sin entenderte 😅 Prueba con algo como «¿qué tengo hoy?», «el jueves cierro» o «queratina 4h», o escribe *ayuda*.';
 const UNDO_HINT = 'Si te has equivocado, escribe *deshacer*.';
 const NO_AUTO_CANCEL = 'Las citas NO se cancelan solas: avisa a esas clientas o dime «cancela la cita de …».';
 
 // ---- free time in a day (for the agenda and for booking by hand) ----
 
-// Free stretches of a day as [[from, to]], in minutes: open and with fewer than `capacity` appointments
+// Free stretches of a day as [[from, to]], in minutes: open, with fewer than `capacity` appointments, and long
+// enough for an appointment (slotMinutes; a 15-minute gap is no use)
 function freeStretches(date, business, appointments, fromMinute = 0) {
   const capacity = business.capacity ?? 1;
+  const shortest = business.slotMinutes ?? 30;
   const busy = appointments.filter(a => a.date === date).map(a => [toMinutes(a.time), toMinutes(a.time) + a.duration]);
   const out = [];
   for (const [a, b] of H.dayHours(business, date)) {
@@ -86,7 +91,7 @@ function freeStretches(date, business, appointments, fromMinute = 0) {
     for (let m = Math.max(a, fromMinute); m <= b; m += 5) {
       const free = m < b && busy.filter(([x, y]) => x <= m && m < y).length < capacity;
       if (free && start === null) start = m;
-      if (!free && start !== null) { if (m - start >= 15) out.push([start, m]); start = null; }
+      if (!free && start !== null) { if (m - start >= shortest) out.push([start, m]); start = null; }
     }
   }
   return out;
@@ -118,10 +123,13 @@ function respondOwner(message, state = {}, options = {}) {
   const u = understandOwner(message, { today, catalog });
   const todayISO = iso(today);
   const pending = state.pending ?? null;
-  let newState = { ...state, pending: null, lastTopic: u.intent ?? state.lastTopic ?? null };
+  let newState = { ...state, pending: null, lastFallback: false, lastTopic: u.intent ?? state.lastTopic ?? null };
   // "de el viernes" → "del viernes", "a el jueves" → "al jueves"
   const tidy = text => text.replace(/\bde el\b/g, 'del').replace(/\ba el\b/g, 'al');
-  const out = (reply, extra = {}) => ({ reply: tidy(reply), state: newState, changes: [], understanding: u, ...extra });
+  // "hola, ¿qué tengo hoy?": "¡Hola! 😊" before the answer
+  const SMALL_TALK = ['greeting', 'howAreYou', 'presence', 'thanks', 'bye', 'dayStatus'];
+  const hi = text => (u.greeting && text && !SMALL_TALK.includes(u.intent) ? `¡Hola! 😊 ${text}` : text);
+  const out = (reply, extra = {}) => ({ reply: hi(tidy(reply)), state: newState, changes: [], understanding: u, ...extra });
 
   // Ask before changing anything: "¿Cierro el jueves 12 de noviembre? (sí / no)"
   const confirm = (change, question, done, warning = '', after = null) => {
@@ -205,6 +213,20 @@ function respondOwner(message, state = {}, options = {}) {
     if (u.intent === 'no') return out('Vale, lo dejamos 👍');
     if (!u.intent) return out(`¿Cuál de ellas? Dime el número (1-${options_.length}).`, { state: (newState = { ...newState, pending }) });
   }
+  if (pending?.kind === 'draft' && pending.action === 'addService' && !['undo', 'help', 'logout'].includes(u.intent)) {
+    if (u.intent === 'no' || /^(cancela|cancelar|dejalo|nada|olvidalo)$/.test(u.normalizedText)) return out('Vale, no lo añado 👍');
+    const d = { ...pending.draft };
+    const raw = message.trim().replace(/[.!¡]+$/, '');
+    const number = /^\d{1,4}([.,]\d{1,2})?$/.test(raw) ? +raw.replace(',', '.') : null;
+    if (pending.asking === 'name') d.name = raw;
+    if (pending.asking === 'duration') d.duration = parseDuration(u.normalizedText) ?? (number >= 5 ? number : null);
+    if (pending.asking === 'price') {
+      d.priceAsked = true;
+      d.price = /^(sin precio|no|nada|ninguno|no tiene|depende)$/.test(u.normalizedText) ? null : parsePrice(message) ?? number;
+      if (d.price == null && !/^(sin precio|no|nada|ninguno|no tiene|depende)$/.test(u.normalizedText)) d.priceAsked = false;
+    }
+    return addService(d);
+  }
   if (pending?.kind === 'draft' && !['yes', 'no', 'undo', 'help', 'logout'].includes(u.intent) &&
       (!u.intent || u.intent === 'agenda' || u.intent === 'serviceInfo' || u.intent === pending.action)) {
     const d = { ...pending.draft };
@@ -226,6 +248,21 @@ function respondOwner(message, state = {}, options = {}) {
 
   // ---- queries ----
   if (u.intent === 'help') return out(HELP);
+
+  // ---- small talk, like the customer bot, with the day's summary ----
+  if (u.intent === 'greeting') {
+    const h = today.getHours();
+    return out(`${h >= 6 && h < 14 ? '¡Buenos días!' : h >= 14 && h < 21 ? '¡Buenas tardes!' : '¡Hola!'} 😊 ${daySummary(true)} ¿En qué te ayudo?`);
+  }
+  if (u.intent === 'howAreYou') return out(`¡Muy bien, gracias! 😊 ¿Y tú? ${daySummary(true)}`);
+  if (u.intent === 'presence') return out('¡Aquí estoy! 😊 ¿En qué te ayudo?');
+  if (u.intent === 'thanks') return out('¡De nada! 😊');
+  if (u.intent === 'bye') return out('¡Hasta luego! 👋 Cuando quieras, aquí estoy.');
+  if (u.intent === 'dayStatus') return out(daySummary(false));
+  if (u.intent === 'feedback') return out('Tienes razón, todavía estoy aprendiendo 😅 Lo que no entiendo lo guardo para que me enseñen. Mientras, escribe *ayuda* para ver lo que sé hacer.');
+  if (u.intent === 'revenue') return out(revenue());
+  if (u.intent === 'servicesList') return out(servicesList(u.category));
+  if (u.intent === 'addService') return addService({ name: u.name, duration: u.duration, price: u.price, priceAsked: u.price != null });
   if (u.intent === 'agenda' || (!u.intent && u.date && state.lastTopic === 'agenda')) {
     newState.lastTopic = 'agenda';
     return out(agenda(u.from ? u : { date: u.date ?? todayISO }));
@@ -262,6 +299,10 @@ function respondOwner(message, state = {}, options = {}) {
     if (!s) return out(NOT_UNDERSTOOD);
     const off = s.active === false ? ' (ahora no lo ofreces)' : '';
     const short = s.synonyms?.[0] ?? serviceName(s).toLowerCase();
+    if (u.intent === 'serviceInfo' && u.serviceIds?.length > 1) {
+      const list = u.serviceIds.map(id => findService(catalog, id)).filter(Boolean);
+      return out(`Sí, los tienes:\n${list.map(x => `• ${serviceName(x)}: ${durationText(x.duration)} · ${x.price != null ? euros(x.price) : 'sin precio'}${x.active === false ? ' (desactivado)' : ''}`).join('\n')}`);
+    }
     if (u.intent === 'serviceInfo') {
       return out(`${serviceName(s)}${off}: ${durationText(s.duration)} · ${s.price != null ? euros(s.price) : 'sin precio'}.\nPara cambiarlo: «${short} ${s.duration === 240 ? '3h' : '4h'}» o «${short} a ${s.price != null ? s.price + 5 : 40} €».`);
     }
@@ -415,9 +456,102 @@ function respondOwner(message, state = {}, options = {}) {
   }
 
   // a bare day after a question about the agenda was handled above; anything else is not understood
-  return out(NOT_UNDERSTOOD, { fallback: true });
+  const again = state.lastFallback;
+  newState.lastFallback = true;
+  return out(again ? NOT_UNDERSTOOD_AGAIN : NOT_UNDERSTOOD, { fallback: true });
 
   // ---- helpers that use this message's data ----
+
+  // "De momento llevas 4 de 6 citas. Ahora mismo: … La siguiente, a las 17:00 con Ana García (Corte de mujer)."
+  function daySummary(short) {
+    const nowMinute = today.getHours() * 60 + today.getMinutes();
+    const list = appointments.filter(a => a.date === todayISO).sort((x, y) => x.time.localeCompare(y.time));
+    const end = a => toMinutes(a.time) + a.duration;
+    const done = list.filter(a => end(a) <= nowMinute);
+    const current = list.find(a => toMinutes(a.time) <= nowMinute && nowMinute < end(a));
+    const next = list.find(a => toMinutes(a.time) > nowMinute);
+    const withWho = a => `a las ${a.time} con ${customerName(a)} (${apptService(a)})`;
+    const parts = [];
+    const c = closedReason(todayISO, business);
+    if (!list.length) parts.push(c ? `Hoy está cerrado${c.kind === 'weekday' ? '' : ` (${c.reason})`}.` : 'Hoy no tienes citas.');
+    else if (done.length === list.length) parts.push(`Hoy ya has terminado: ${plural(list.length, 'cita', 'citas')} 💪`);
+    else if (!done.length && !current) parts.push(`Hoy tienes ${plural(list.length, 'cita', 'citas')}; la primera, ${withWho(next)}.`);
+    else {
+      parts.push(done.length ? `De momento llevas ${done.length} de ${plural(list.length, 'cita', 'citas')}.` : `Hoy tienes ${plural(list.length, 'cita', 'citas')}.`);
+      if (current) parts.push(`Ahora mismo estás con ${customerName(current)} (${apptService(current)}, hasta las ${hhmm(end(current))}).`);
+      parts.push(next ? `La siguiente, ${withWho(next)}.` : 'Es la última del día.');
+    }
+    if (!next && !short) {
+      const tomorrow = appointments.filter(a => a.date > todayISO).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+      if (tomorrow.length) {
+        const day = tomorrow[0].date;
+        const that = tomorrow.filter(a => a.date === day);
+        parts.push(`${cap(dayText(day, today).replace(/ \(.*\)$/, ''))} tienes ${plural(that.length, 'cita', 'citas')}; la primera, ${withWho(that[0])}.`);
+      }
+    }
+    if (inbox.length) parts.push(`Tienes ${plural(inbox.length, 'mensaje', 'mensajes')} sin contestar («¿qué me han preguntado?»).`);
+    if (waitlist.length && !short) parts.push(`${plural(waitlist.length, 'persona', 'personas')} en lista de espera.`);
+    return parts.join(' ');
+  }
+
+  // What was charged is not known: it is paid at the till, with extras. Only a floor from the catalog prices.
+  function revenue() {
+    const list = appointments.filter(a => a.date === todayISO);
+    const till = 'Lo que se cobra en caja (y los extras, como champú, mascarillas o tratamientos) yo no lo veo.';
+    if (!list.length) return `Hoy no tienes citas. ${till}`;
+    let sum = 0, unknown = 0;
+    for (const a of list) {
+      const prices = (a.details?.length ? a.details : [{ id: a.service }]).map(d => findService(catalog, d.id)?.price ?? catalog.find(s => s.group === d.group && s.id === s.group)?.price);
+      if (prices.some(p => p == null)) unknown++;
+      sum += prices.reduce((n, p) => n + (p ?? 0), 0);
+    }
+    return `No lo sé con exactitud: ${till.charAt(0).toLowerCase()}${till.slice(1)} Con los precios de la carta, las ${plural(list.length, 'cita', 'citas').replace(/^1 cita$/, 'cita')} de hoy suman como mínimo ${euros(sum)}${unknown ? ` (${plural(unknown, 'cita no tiene', 'citas no tienen')} precio en la carta)` : ''}.`;
+  }
+
+  // The catalog by group, or one group in detail
+  function servicesList(category) {
+    const label = c => CATEGORY_LABELS[c ?? 'otros'] ?? c;
+    if (category) {
+      const list = catalog.filter(s => s.category === category);
+      if (!list.length) return `No tienes servicios de ${label(category).replace(/^\S+ /, '').toLowerCase()}.`;
+      return `${label(category)}:\n${list.map(x => `• ${serviceName(x)}: ${durationText(x.duration)} · ${x.price != null ? euros(x.price) : 'sin precio'}${x.active === false ? ' (desactivado)' : ''}`).join('\n')}`;
+    }
+    const active = catalog.filter(s => s.active !== false);
+    const order = Object.keys(CATEGORY_LABELS);
+    const cats = [...new Set(catalog.map(s => s.category ?? 'otros'))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    const lines = cats.map(c => `• ${label(c)}: ${catalog.filter(s => (s.category ?? 'otros') === c && s.active !== false).length}`);
+    const off = catalog.length - active.length;
+    return `Tienes ${plural(active.length, 'servicio', 'servicios')}${off ? ` (y ${off} desactivados)` : ''}:\n${lines.join('\n')}\n\nPara ver un grupo: «servicios de color». Un servicio: «queratina». Uno nuevo: «añade un servicio».`;
+  }
+
+  // A new service: name, duration, price (or none), then confirm
+  function addService(d) {
+    const ask = (asking, question) => {
+      newState = { ...newState, pending: { kind: 'draft', action: 'addService', draft: d, asking } };
+      return out(question);
+    };
+    if (!d.name) return ask('name', '¿Cómo se llama el servicio nuevo?');
+    // already in the catalog: same name, or a synonym that is the whole name ("keratina")
+    const found = detectServices(normalize(d.name), catalog).find(s => s.id !== 'LAST');
+    const same = catalog.find(s => normalize(s.name) === normalize(d.name)) ??
+      (found && catalog.find(s => s.id === found.id)?.synonyms?.some(x => normalize(x) === normalize(d.name)) ? catalog.find(s => s.id === found.id) : null);
+    if (same) {
+      return out(same.active === false
+        ? `Ya lo tienes, pero desactivado: ${serviceName(same)}. Para volver a ofrecerlo: «vuelvo a hacer ${(same.synonyms?.[0] ?? serviceName(same)).toLowerCase()}».`
+        : `Ya lo tienes: ${serviceName(same)}, ${durationText(same.duration)} · ${same.price != null ? euros(same.price) : 'sin precio'}.`);
+    }
+    const name = d.name[0].toUpperCase() + d.name.slice(1);
+    if (!d.duration) return ask('duration', `¿Cuánto dura «${name}»? (por ejemplo «45 min» o «1 h 30»)`);
+    if (!d.priceAsked) return ask('price', `¿Qué precio tiene? (o «sin precio»)`);
+    const key = normalize(name);
+    let id = key.replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'servicio';
+    while (catalog.some(s => s.id === id)) id += '_2';
+    const service = { id, group: id, category: 'otros', name, duration: d.duration, price: d.price ?? null, synonyms: [key] };
+    return confirm(
+      { type: 'addService', service, summary: `añadir ${name}` },
+      `¿Añado «${name}» (${durationText(d.duration)} · ${d.price != null ? euros(d.price) : 'sin precio'})? Las clientas podrán pedirlo escribiendo «${key}».`,
+      `«${name}» añadido a tus servicios.`);
+  }
 
   // "Tienes 39 mensajes sin contestar (te enseño 1-5):" + numbered list. Numbers stay the same until a new list.
   function showInbox(from, all, ids = inbox.map(h => h.id)) {

@@ -253,6 +253,8 @@ async function applyOwnerChange(store, businessId, change) {
     }
   } else if (change.type === 'cancelAppointment') {
     await store.cancelAppointment(businessId, change.appointmentId);
+  } else if (change.type === 'addService') {
+    await store.addService(businessId, change.service);
   } else if (change.type === 'ignoreHandovers') {
     for (const id of change.ids) await store.closeHandover(businessId, id);
   } else if (change.type === 'replyHandover') {
@@ -285,6 +287,8 @@ async function undoOwnerChange(store, businessId, changeId) {
     await store.updateAppointment(businessId, c.data.appointmentId, { status: 'booked' });
   } else if (c.type === 'moveAppointment') {
     await store.updateAppointment(businessId, c.data.appointmentId, c.previous);
+  } else if (c.type === 'addService') {
+    await store.deleteService(businessId, c.data.service.id);
   } else if (c.type === 'ignoreHandovers') {
     for (const id of c.data.ids) await store.reopenHandover(businessId, id);
   } else if (c.type === 'replyHandover') {
